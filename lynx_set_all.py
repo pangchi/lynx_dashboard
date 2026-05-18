@@ -1,69 +1,80 @@
 #!/usr/bin/env python3
 """
-LYNX Set All Zones – CLI Version (with external config)
+LYNX Set All Zones – CLI Version (reads config.ini)
 
 Usage:
     python lynx_set_all.py 60
     python lynx_set_all.py --temp 70
-    python lynx_set_all.py --config config.json 75
+    python lynx_set_all.py --config /path/to/config.ini 75
 
-Config file example (config.json):
-{
-    "dashboard_ip": "127.0.0.1",
-    "port": 5000,
-    "timeout": 8
-}
+config.ini [flask] section used:
+    [flask]
+    port = 5000
+
+config.ini [dashboard] section (optional, falls back to localhost):
+    [dashboard]
+    ip = 127.0.0.1
 """
 
 import requests
 import argparse
 import sys
 import time
-import json
+import configparser
 import os
 
 # ========= DEFAULT CONFIG =========
 DEFAULT_CONFIG = {
     "dashboard_ip": "127.0.0.1",
     "port": 5000,
-    "timeout": 8
+    "timeout": 8,
 }
 
-def load_config(config_path: str):
+
+def load_config(config_path: str) -> dict:
     if not config_path:
-        #return DEFAULT_CONFIG
-        config_path = "config.json"
+        config_path = os.path.join(os.path.dirname(__file__), "config.ini")
 
     if not os.path.exists(config_path):
         print(f"Config file not found: {config_path}")
         sys.exit(1)
 
+    cfg = configparser.ConfigParser()
     try:
-        with open(config_path, "r") as f:
-            config = json.load(f)
+        cfg.read(config_path)
     except Exception as e:
         print(f"Failed to read config file: {e}")
         sys.exit(1)
 
-    # Merge with defaults
     merged = DEFAULT_CONFIG.copy()
-    merged.update(config)
+
+    # Flask port (same file as dashboard uses)
+    if cfg.has_option("flask", "port"):
+        merged["port"] = cfg.getint("flask", "port")
+
+    # Optional [dashboard] section for remote IP
+    if cfg.has_option("dashboard", "ip"):
+        merged["dashboard_ip"] = cfg.get("dashboard", "ip")
+
+    # Optional timeout override
+    if cfg.has_option("dashboard", "timeout"):
+        merged["timeout"] = cfg.getfloat("dashboard", "timeout")
+
     return merged
 
 
 def set_all_to(temp_c: float, config: dict):
-    host = config["dashboard_ip"]
-    port = config["port"]
+    host    = config["dashboard_ip"]
+    port    = config["port"]
     timeout = config.get("timeout", 8)
 
     url_status = f"http://{host}:{port}/api/status"
-    url_set = f"http://{host}:{port}/api/setpoint"
+    url_set    = f"http://{host}:{port}/api/setpoint"
 
     print(f"Setting ALL zones to {temp_c} °C")
     print(f"Connecting to dashboard at {host}:{port} ...")
 
     try:
-        # Get current zone list
         r = requests.get(url_status, timeout=timeout)
         r.raise_for_status()
         data = r.json()
@@ -79,47 +90,28 @@ def set_all_to(temp_c: float, config: dict):
 
         print(f"Found {len(zones)} active zones")
 
-        # Confirm action
-        '''
-        confirm = input(f"Confirm set ALL zones to {temp_c} °C? (y/N): ")
-        if confirm.lower() != "y":
-            print("Aborted.")
-            sys.exit(0)
-        '''
-        
-        # Build batch payload safely
         updates = []
         for z in zones:
             try:
-                updates.append({
-                    "line": z["line"],
-                    "zone": z["zone"],
-                    "sp": temp_c
-                })
+                updates.append({"line": z["line"], "zone": z["zone"], "sp": temp_c})
             except KeyError:
                 print(f"Skipping malformed zone: {z}")
 
-        # Send batch setpoint command
         resp = requests.post(url_set, json={"updates": updates}, timeout=timeout)
         resp.raise_for_status()
         result = resp.json()
 
         if result.get("success"):
-            print("\nSUCCESS!")
-            print(f"All {len(updates)} zones are now set to {temp_c} °C")
-
-            details = result.get("details", [])
-            failed = [d for d in details if not d.get("success")]
-
+            print(f"\nSUCCESS! All {len(updates)} zones set to {temp_c} °C")
+            failed = [d for d in result.get("details", []) if not d.get("success")]
             if failed:
-                print(f"Warning: {len(failed)} zones failed")
+                print(f"Warning: {len(failed)} zone(s) failed")
         else:
             print("\nFAILED")
             print(result.get("error", "Unknown error"))
 
     except requests.exceptions.ConnectionError:
-        print("Cannot connect to dashboard.")
-        print(f"   → Is the dashboard running on http://{host}:{port} ?")
+        print(f"Cannot connect – is the dashboard running on http://{host}:{port} ?")
     except requests.exceptions.Timeout:
         print("Request timed out – network issue or dashboard too slow.")
     except requests.exceptions.HTTPError as e:
@@ -133,37 +125,28 @@ def set_all_to(temp_c: float, config: dict):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Set ALL LYNX zones to the same setpoint temperature",
-        epilog="Example: python lynx_set_all.py 75.0 --config config.json"
+        epilog="Example: python lynx_set_all.py 75.0 --config config.ini"
     )
-
     parser.add_argument(
-        "temperature",
-        type=float,
-        nargs="?",
+        "temperature", type=float, nargs="?",
         help="Target temperature in °C"
     )
-
     parser.add_argument(
-        "--temp",
-        type=float,
-        dest="temperature_alt",
-        help="Alternative way: --temp 70"
+        "--temp", type=float, dest="temperature_alt",
+        help="Alternative: --temp 70"
     )
-
     parser.add_argument(
-        "--config",
-        type=str,
-        help="Path to config JSON file"
+        "--config", type=str,
+        help="Path to config.ini (default: config.ini next to this script)"
     )
 
     args = parser.parse_args()
 
     temp = args.temperature or args.temperature_alt
     if temp is None:
-        parser.error("You must provide a temperature (e.g. 60) or use --temp 60")
+        parser.error("Provide a temperature, e.g.: python lynx_set_all.py 60")
 
     config = load_config(args.config)
-
     set_all_to(temp, config)
 
     print("\nDone.")
