@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>LYNX – Settings</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:Arial,sans-serif;background:#f0f2f5;color:#333}
+  .header{background:#2c3e50;color:#fff;padding:14px 24px;display:flex;align-items:center;justify-content:space-between}
+  .header h1{font-size:1.2rem;font-weight:700}
+  .header a{color:#aed6f1;text-decoration:none;font-size:.85rem}
+  .header a:hover{color:#fff}
+  .card{background:#fff;border-radius:8px;box-shadow:0 1px 6px rgba(0,0,0,.08);
+        padding:28px 32px;margin:24px auto;max-width:520px}
+  .card h2{font-size:1rem;font-weight:700;color:#2c3e50;margin-bottom:20px;
+           padding-bottom:10px;border-bottom:2px solid #f0f2f5}
+  .field{margin-bottom:16px}
+  .field label{display:block;font-size:.8rem;font-weight:600;color:#555;
+               text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px}
+  .field input{width:100%;padding:9px 12px;border:1px solid #ccc;border-radius:5px;
+               font-size:.95rem;background:#fafafa;transition:border .15s}
+  .field input:focus{outline:none;border-color:#3498db;background:#fff}
+  .field .hint{font-size:.75rem;color:#999;margin-top:4px}
+  .actions{display:flex;gap:12px;margin-top:24px}
+  .btn{flex:1;padding:10px;border:none;border-radius:5px;cursor:pointer;
+       font-size:.95rem;font-weight:600}
+  .btn-primary{background:#3498db;color:#fff}.btn-primary:hover{background:#2980b9}
+  .btn-test{background:#8e44ad;color:#fff}.btn-test:hover{background:#7d3c98}
+  .msg{padding:10px 14px;border-radius:5px;margin-top:16px;font-size:.9rem;display:none}
+  .msg-ok{background:#d4edda;color:#155724}
+  .msg-err{background:#f8d7da;color:#721c24}
+  .msg-info{background:#d1ecf1;color:#0c5460}
+</style></head><body>
+<div class="header">
+  <h1>⚙ LYNX Settings</h1>
+  <a href="/">← Live Dashboard</a>
+</div>
+<div class="card">
+  <h2>Modbus / OI Gateway</h2>
+  <div class="field">
+    <label>Host (IP Address)</label>
+    <input type="text" id="oi_host" placeholder="192.168.200.20">
+  </div>
+  <div class="field">
+    <label>Port</label>
+    <input type="number" id="oi_port" min="1" max="65535" placeholder="502">
+  </div>
+  <div class="field">
+    <label>Timeout (seconds)</label>
+    <input type="number" id="oi_timeout" min="0.5" max="30" step="0.5" placeholder="4.0">
+  </div>
+  <div class="field">
+    <label>Scan Interval (seconds)</label>
+    <input type="number" id="scan_interval" min="4" max="3600" placeholder="8">
+    <div class="hint">How often the scanner polls the OI Gateway (minimum 4 s)</div>
+  </div>
+  <div class="field">
+    <label>DB Log Interval (seconds)</label>
+    <input type="number" id="db_interval" min="10" max="86400" placeholder="60">
+    <div class="hint">How often zone data is saved to PostgreSQL (minimum 10 s)</div>
+  </div>
+  <div class="field">
+    <label>Line Voltage (V)</label>
+    <input type="number" id="line_voltage" min="1" max="1000" step="1" placeholder="240">
+    <div class="hint">Used to calculate zone power (W = V × A) and kWh accumulation</div>
+  </div>
+  <div class="actions">
+    <button class="btn btn-test" onclick="testConn()">🔌 Test Connection</button>
+    <button class="btn btn-primary" onclick="saveSettings()">💾 Save & Apply</button>
+  </div>
+  <div class="msg" id="msg"></div>
+</div>
+<script>
+fetch("/api/settings").then(r=>r.json()).then(d=>{
+  document.getElementById("oi_host").value       = d.oi_host;
+  document.getElementById("oi_port").value       = d.oi_port;
+  document.getElementById("oi_timeout").value    = d.oi_timeout;
+  document.getElementById("scan_interval").value = d.scan_interval;
+  document.getElementById("db_interval").value    = d.db_interval;
+  document.getElementById("line_voltage").value   = d.line_voltage;
+});
+function showMsg(text, type) {
+  const el = document.getElementById("msg");
+  el.textContent = text;
+  el.className = "msg msg-" + type;
+  el.style.display = "block";
+  if (type === "ok") setTimeout(() => el.style.display="none", 3000);
+}
+function getValues() {
+  return {
+    oi_host:       document.getElementById("oi_host").value.trim(),
+    oi_port:       parseInt(document.getElementById("oi_port").value),
+    oi_timeout:    parseFloat(document.getElementById("oi_timeout").value),
+    scan_interval: parseInt(document.getElementById("scan_interval").value),
+    db_interval:   parseInt(document.getElementById("db_interval").value),
+    line_voltage:  parseFloat(document.getElementById("line_voltage").value),
+  };
+}
+async function testConn() {
+  showMsg("Testing connection...", "info");
+  try {
+    const r = await fetch("/api/settings/test", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body:JSON.stringify(getValues())
+    });
+    const d = await r.json();
+    if (d.success) showMsg("✓ Connected! Found " + d.zone_count + " zone(s).", "ok");
+    else showMsg("✗ " + d.error, "err");
+  } catch(e) { showMsg("✗ " + e.message, "err"); }
+}
+async function saveSettings() {
+  showMsg("Saving...", "info");
+  try {
+    const r = await fetch("/api/settings", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body:JSON.stringify(getValues())
+    });
+    const d = await r.json();
+    if (d.success) showMsg("✓ Settings saved and applied.", "ok");
+    else showMsg("✗ " + d.error, "err");
+  } catch(e) { showMsg("✗ " + e.message, "err"); }
+}
+</script></body></html>

@@ -81,14 +81,19 @@ def ensure_db_exists(host, port, dbname, user, password,
             # ── 1. Create user/role if missing ──────────────────────────
             cur.execute("SELECT 1 FROM pg_roles WHERE rolname = %s", (user,))
             if not cur.fetchone():
-                # Can't use %s for identifiers; use a safe manual quote
                 cur.execute(
                     f"CREATE USER {_quote_ident(user)} WITH PASSWORD %s",
                     (password,)
                 )
                 log.info("Created PostgreSQL user: %s", user)
             else:
-                log.debug("PostgreSQL user already exists: %s", user)
+                # Always sync the password so config.ini stays the source of truth
+                if password:
+                    cur.execute(
+                        f"ALTER USER {_quote_ident(user)} WITH PASSWORD %s",
+                        (password,)
+                    )
+                    log.debug("Synced password for PostgreSQL user: %s", user)
 
             # ── 2. Create database if missing ────────────────────────────
             cur.execute("SELECT 1 FROM pg_database WHERE datname = %s", (dbname,))
@@ -162,6 +167,8 @@ class LynxDBLogger:
         """,
         "CREATE INDEX IF NOT EXISTS idx_lynx_ts ON lynx_zone_log (ts DESC)",
         "CREATE INDEX IF NOT EXISTS idx_lynx_line_zone ON lynx_zone_log (line, zone, ts DESC)",
+        # Migration: drop stored power_w column (now computed on read)
+        "ALTER TABLE lynx_zone_log DROP COLUMN IF EXISTS power_w",
     ]
 
     _INSERT = """
@@ -230,11 +237,25 @@ class LynxDBLogger:
     def _connect(self):
         psycopg2 = _import_psycopg2()
         dsn = {k: v for k, v in self._dsn.items() if k != "password" or v}
+
+        # Run DDL (CREATE TABLE, indexes, migrations) with autocommit ON.
+        # DDL inside a regular transaction block causes "cannot run inside a
+        # transaction block" errors on some PostgreSQL configurations.
+        ddl_conn = psycopg2.connect(**dsn)
+        ddl_conn.autocommit = True
+        try:
+            with ddl_conn.cursor() as cur:
+                for stmt in self._DDL:
+                    try:
+                        cur.execute(stmt)
+                    except Exception as e:
+                        log.warning("DDL step skipped (%s): %s",
+                                    stmt.strip()[:60], e)
+        finally:
+            ddl_conn.close()
+
+        # Return a normal transactional connection for INSERT workload
         conn = psycopg2.connect(**dsn)
-        with conn.cursor() as cur:
-            for stmt in self._DDL:
-                cur.execute(stmt)
-        conn.commit()
         return conn
 
     def _check_and_purge(self, conn):

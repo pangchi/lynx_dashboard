@@ -1,0 +1,405 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>LYNX – History Viewer</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/luxon@3.4.4/build/global/luxon.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1.3.1/dist/chartjs-adapter-luxon.umd.min.js"></script>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:Arial,sans-serif;background:#f0f2f5;color:#333;min-height:100vh}
+
+  .header{background:#2c3e50;color:#fff;padding:14px 24px;display:flex;
+          align-items:center;justify-content:space-between}
+  .header h1{font-size:1.2rem;font-weight:700}
+  .header a{color:#aed6f1;text-decoration:none;font-size:.85rem}
+  .header a:hover{color:#fff}
+
+  .controls{background:#fff;border-bottom:1px solid #ddd;padding:14px 24px;
+            display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end}
+  .ctrl-group{display:flex;flex-direction:column;gap:4px}
+  .ctrl-group label{font-size:.75rem;font-weight:600;color:#555;text-transform:uppercase;letter-spacing:.04em}
+  .ctrl-group input,.ctrl-group select{
+      padding:7px 10px;border:1px solid #ccc;border-radius:5px;font-size:.9rem;background:#fafafa}
+  .ctrl-group input:focus,.ctrl-group select:focus{outline:none;border-color:#3498db;background:#fff}
+
+  .btn{padding:8px 18px;border:none;border-radius:5px;cursor:pointer;font-size:.9rem;font-weight:600}
+  .btn-primary{background:#3498db;color:#fff}.btn-primary:hover{background:#2980b9}
+  .btn-success{background:#27ae60;color:#fff}.btn-success:hover{background:#219150}
+
+  .stats{display:flex;gap:16px;padding:14px 24px;flex-wrap:wrap}
+  .stat-card{background:#fff;border-radius:8px;padding:12px 20px;
+             box-shadow:0 1px 4px rgba(0,0,0,.08);min-width:120px;text-align:center}
+  .stat-card .val{font-size:1.6rem;font-weight:700;color:#2c3e50}
+  .stat-card .lbl{font-size:.75rem;color:#888;margin-top:2px}
+
+  .chart-wrap{background:#fff;margin:0 24px 24px;border-radius:8px;
+              box-shadow:0 1px 6px rgba(0,0,0,.08);padding:20px}
+  .chart-wrap h2{font-size:1rem;font-weight:600;color:#555;margin-bottom:14px}
+  canvas{max-height:380px}
+
+  .table-wrap{margin:0 24px 32px;background:#fff;border-radius:8px;
+              box-shadow:0 1px 6px rgba(0,0,0,.08);overflow:auto}
+  table{width:100%;border-collapse:collapse}
+  th{background:#2c3e50;color:#fff;padding:10px 12px;text-align:left;font-size:.82rem}
+  td{padding:8px 12px;font-size:.85rem;border-bottom:1px solid #f0f0f0}
+  tr:hover td{background:#f7faff}
+
+  .badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:.75rem;font-weight:600}
+  .badge-ok{background:#d4edda;color:#155724}
+  .badge-heat{background:#fff3cd;color:#856404}
+  .badge-over{background:#f8d7da;color:#721c24}
+  .badge-notc{background:#e2e3e5;color:#495057}
+
+  .msg{padding:10px 16px;border-radius:5px;margin:12px 24px;font-size:.9rem}
+  .msg-info{color:#0c5460;background:#d1ecf1}
+  .msg-err{color:#721c24;background:#f8d7da}
+  #loading{display:none;text-align:center;padding:40px;color:#888}
+
+  /* zone selector */
+  .zone-panel{background:#fff;border-bottom:1px solid #e8e8e8;
+              padding:12px 24px;display:none;align-items:center;flex-wrap:wrap;gap:8px}
+  .zone-panel .zp-label{font-size:.78rem;font-weight:700;color:#555;
+                        text-transform:uppercase;letter-spacing:.04em;margin-right:4px}
+  .zone-chip{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;
+             border-radius:12px;border:2px solid transparent;cursor:pointer;
+             font-size:.8rem;font-weight:600;user-select:none;transition:opacity .15s}
+  .zone-chip.active{opacity:1}
+  .zone-chip.inactive{opacity:.28;filter:grayscale(.6)}
+  .zone-chip .dot{width:9px;height:9px;border-radius:50%;flex-shrink:0}
+  .zp-actions{display:flex;gap:6px;margin-left:auto}
+  .zp-btn{padding:4px 10px;border:1px solid #ccc;border-radius:4px;background:#fafafa;
+          cursor:pointer;font-size:.78rem;font-weight:600;color:#555}
+  .zp-btn:hover{background:#eee}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>📈 BriskHeat LYNX – History Viewer</h1>
+  <a href="/">← Live Dashboard</a>
+  <a href="/energy">⚡ Energy</a>
+</div>
+
+<div class="controls">
+  <div class="ctrl-group">
+    <label>Start</label>
+    <input type="datetime-local" id="startDt">
+  </div>
+  <div class="ctrl-group">
+    <label>End</label>
+    <input type="datetime-local" id="endDt">
+  </div>
+  <div class="ctrl-group">
+    <label>Line</label>
+    <select id="filterLine">
+      <option value="">All</option>
+      <option>1</option><option>2</option><option>3</option><option>4</option>
+    </select>
+  </div>
+  <div class="ctrl-group">
+    <label>Zone</label>
+    <input type="number" id="filterZone" placeholder="All" min="1" max="64" style="width:80px">
+  </div>
+  <div class="ctrl-group">
+    <label>Max rows</label>
+    <select id="limitSel">
+      <option value="1000">1 000</option>
+      <option value="5000">5 000</option>
+      <option value="10000" selected>10 000</option>
+      <option value="50000">50 000</option>
+    </select>
+  </div>
+  <button class="btn btn-primary" onclick="loadData()">🔍 Query</button>
+  <button class="btn btn-success" onclick="downloadCSV()">⬇ Download CSV</button>
+</div>
+
+<div id="zonePanelWrap" class="zone-panel">
+  <span class="zp-label">Zones</span>
+  <div id="zoneChips" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+  <div class="zp-actions">
+    <button class="zp-btn" onclick="selectAllZones()">All</button>
+    <button class="zp-btn" onclick="deselectAllZones()">None</button>
+  </div>
+</div>
+<div id="msgArea"></div>
+<div id="loading">Loading…</div>
+
+<div class="stats" id="statsRow" style="display:none">
+  <div class="stat-card"><div class="val" id="scRows">–</div><div class="lbl">Rows returned</div></div>
+  <div class="stat-card"><div class="val" id="scAvgPV">–</div><div class="lbl">Avg PV (°C)</div></div>
+  <div class="stat-card"><div class="val" id="scMaxPV">–</div><div class="lbl">Max PV (°C)</div></div>
+  <div class="stat-card"><div class="val" id="scMinPV">–</div><div class="lbl">Min PV (°C)</div></div>
+  <div class="stat-card"><div class="val" id="scTotalKwh">–</div><div class="lbl">Total Energy (kWh)</div></div>
+</div>
+
+<div class="chart-wrap" id="chartWrap" style="display:none">
+  <h2>PV Temperature Trend</h2>
+  <canvas id="pvChart"></canvas>
+</div>
+<div class="chart-wrap" id="powerChartWrap" style="display:none">
+  <h2>Power (W) Trend</h2>
+  <canvas id="powerChart"></canvas>
+</div>
+<div class="chart-wrap" id="currentChartWrap" style="display:none">
+  <h2>Current (A) Trend</h2>
+  <canvas id="currentChart"></canvas>
+</div>
+<div class="chart-wrap" id="outChartWrap" style="display:none">
+  <h2>Output % Trend</h2>
+  <canvas id="outChart"></canvas>
+</div>
+<div class="chart-wrap" id="spChartWrap" style="display:none">
+  <h2>Setpoint Trend</h2>
+  <canvas id="spChart"></canvas>
+</div>
+
+<div class="table-wrap" id="tableWrap" style="display:none">
+  <table>
+    <thead><tr>
+      <th>Timestamp</th><th>Line</th><th>Zone</th>
+      <th>PV (°C)</th><th>SP (°C)</th><th>Out %</th>
+      <th>Current (A)</th><th>Status</th>
+    </tr></thead>
+    <tbody id="tBody"></tbody>
+  </table>
+</div>
+
+<script>
+(function() {
+  // datetime-local input needs local time (YYYY-MM-DDTHH:MM)
+  const fmt = d => {
+    const pad = n => String(n).padStart(2,"0");
+    return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate())+
+           "T"+pad(d.getHours())+":"+pad(d.getMinutes());
+  };
+  const now = new Date(), ago = new Date(now - 86400000);
+  document.getElementById("endDt").value   = fmt(now);
+  document.getElementById("startDt").value = fmt(ago);
+})();
+
+const PALETTE = ["#3498db","#e74c3c","#2ecc71","#f39c12","#9b59b6",
+                 "#1abc9c","#e67e22","#34495e","#16a085","#c0392b"];
+
+let pvChart, spChart, outChart, currentChart, powerChart;
+let _allRows   = [];          // full dataset from last query
+let _zoneKeys  = [];          // ordered zone label list e.g. ["L1-Z1","L1-Z2"]
+let _activeSet = new Set();   // currently visible zone labels
+
+// ── data load ──────────────────────────────────────────────────────────────
+async function loadData() {
+  setMsg("","");
+  document.getElementById("loading").style.display = "block";
+  ["statsRow","zonePanelWrap","chartWrap","powerChartWrap","currentChartWrap","spChartWrap","outChartWrap","tableWrap"]
+    .forEach(id => document.getElementById(id).style.display = "none");
+
+  try {
+    const res  = await fetch("/api/history?" + buildParams());
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    if (!data.rows?.length) { setMsg("No data found for this range.","info"); return; }
+
+    _allRows  = data.rows;
+    _zoneKeys = [...new Set(data.rows.map(r=>`L${r.line}-Z${r.zone}`))].sort();
+    _activeSet = new Set(_zoneKeys);   // all selected by default
+
+    renderZonePanel();
+    applyZoneFilter();
+  } catch(e) {
+    setMsg("Error: " + e.message, "err");
+  } finally {
+    document.getElementById("loading").style.display = "none";
+  }
+}
+
+// ── apply active filter and re-render everything ───────────────────────────
+function applyZoneFilter() {
+  const rows = _allRows.filter(r => _activeSet.has(`L${r.line}-Z${r.zone}`));
+  renderStats(rows);
+  renderCharts(rows);
+  renderTable(rows);
+}
+
+// ── zone selector panel ───────────────────────────────────────────────────
+function renderZonePanel() {
+  const chips = document.getElementById("zoneChips");
+  chips.innerHTML = "";
+  _zoneKeys.forEach((key, i) => {
+    const color = PALETTE[i % PALETTE.length];
+    const chip  = document.createElement("div");
+    chip.className   = "zone-chip active";
+    chip.dataset.key = key;
+    chip.style.borderColor = color;
+    chip.style.background  = color + "18";
+    chip.innerHTML = `<span class="dot" style="background:${color}"></span>${key}`;
+    chip.onclick = () => toggleZone(key);
+    chips.appendChild(chip);
+  });
+  document.getElementById("zonePanelWrap").style.display = "flex";
+}
+
+function toggleZone(key) {
+  if (_activeSet.has(key)) {
+    if (_activeSet.size === 1) return;   // keep at least one visible
+    _activeSet.delete(key);
+  } else {
+    _activeSet.add(key);
+  }
+  // Update chip appearance
+  document.querySelectorAll(".zone-chip").forEach(c => {
+    c.className = "zone-chip " + (_activeSet.has(c.dataset.key) ? "active" : "inactive");
+  });
+  applyZoneFilter();
+}
+
+function selectAllZones() {
+  _activeSet = new Set(_zoneKeys);
+  document.querySelectorAll(".zone-chip").forEach(c => c.className = "zone-chip active");
+  applyZoneFilter();
+}
+
+function deselectAllZones() {
+  // Keep only the first zone selected
+  _activeSet = new Set([_zoneKeys[0]]);
+  document.querySelectorAll(".zone-chip").forEach(c => {
+    c.className = "zone-chip " + (_activeSet.has(c.dataset.key) ? "active" : "inactive");
+  });
+  applyZoneFilter();
+}
+
+// ── params / csv ──────────────────────────────────────────────────────────
+function buildParams() {
+  // datetime-local gives local time; convert to UTC ISO string for the API
+  const toUTC = val => val ? new Date(val).toISOString() : "";
+  const p = new URLSearchParams();
+  p.set("start", toUTC(document.getElementById("startDt").value));
+  p.set("end",   toUTC(document.getElementById("endDt").value));
+  const line = document.getElementById("filterLine").value;
+  const zone = document.getElementById("filterZone").value;
+  if (line) p.set("line", line);
+  if (zone) p.set("zone", zone);
+  p.set("limit", document.getElementById("limitSel").value);
+  return p.toString();
+}
+
+function downloadCSV() { window.location = "/api/history/csv?" + buildParams(); }
+
+// ── stats ──────────────────────────────────────────────────────────────────
+function renderStats(rows) {
+  const pvs = rows.map(r=>r.pv).filter(v=>v!==null);
+  document.getElementById("scRows").textContent  = rows.length.toLocaleString();
+  document.getElementById("scAvgPV").textContent = pvs.length?(pvs.reduce((a,b)=>a+b,0)/pvs.length).toFixed(1):"–";
+  document.getElementById("scMaxPV").textContent = pvs.length?Math.max(...pvs).toFixed(1):"–";
+  document.getElementById("scMinPV").textContent = pvs.length?Math.min(...pvs).toFixed(1):"–";
+  // kWh = sum of (W * Δt_sec) / 3600  — using midpoint rule between consecutive timestamps
+  let kwh = 0;
+  const sorted = [...rows].sort((a,b)=>new Date(a.ts)-new Date(b.ts));
+  for (let i=1; i<sorted.length; i++) {
+    const dt = (new Date(sorted[i].ts) - new Date(sorted[i-1].ts)) / 1000; // seconds
+    const w  = (sorted[i].power_w ?? 0) + (sorted[i-1].power_w ?? 0);     // avg W * 2
+    kwh += (w / 2) * dt / 3600;
+  }
+  document.getElementById("scTotalKwh").textContent = kwh > 0 ? kwh.toFixed(3) : "–";
+  document.getElementById("statsRow").style.display = "flex";
+}
+
+// ── charts ─────────────────────────────────────────────────────────────────
+function groupByZone(rows) {
+  const map={};
+  for(const r of rows){const k=`L${r.line}-Z${r.zone}`;(map[k]=map[k]||[]).push(r);}
+  return map;
+}
+function makeDatasets(grouped, field) {
+  return Object.entries(grouped).map(([key, rows]) => {
+    const i = _zoneKeys.indexOf(key);
+    const color = PALETTE[i >= 0 ? i % PALETTE.length : 0];
+    return {
+      label: key,
+      data:  rows.map(r=>({x:r.ts, y:r[field]})),
+      borderColor:     color,
+      backgroundColor: color + "22",
+      pointRadius:     rows.length > 500 ? 0 : 2,
+      borderWidth: 1.5, tension: 0.2
+    };
+  });
+}
+const _TZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
+const CHART_OPTS = yLabel =>({
+  responsive:true, animation:false,
+  interaction:{mode:"index",intersect:false},
+  plugins:{
+    legend:{display:false},
+    tooltip:{callbacks:{title:i=>new Date(i[0].parsed.x).toLocaleString()}}
+  },
+  scales:{
+    x:{
+      type:"time",
+      adapters:{date:{zone:_TZ}},
+      time:{
+        tooltipFormat:"yyyy-MM-dd HH:mm:ss",
+        displayFormats:{
+          millisecond:"HH:mm:ss.SSS", second:"HH:mm:ss",
+          minute:"HH:mm", hour:"MM-dd HH:mm",
+          day:"yyyy-MM-dd", week:"yyyy-MM-dd",
+          month:"yyyy-MM", quarter:"yyyy-MM", year:"yyyy"
+        }
+      },
+      ticks:{maxTicksLimit:10,font:{size:10}}
+    },
+    y:{title:{display:true,text:yLabel,font:{size:11}},ticks:{font:{size:10}}}
+  }
+});
+function buildChart(id, datasets, yLabel){
+  return new Chart(document.getElementById(id).getContext("2d"),
+    {type:"line", data:{datasets}, options:CHART_OPTS(yLabel)});
+}
+function renderCharts(rows){
+  const g = groupByZone(rows);
+  if(pvChart)      pvChart.destroy();
+  if(spChart)      spChart.destroy();
+  if(powerChart)   powerChart.destroy();
+  if(currentChart) currentChart.destroy();
+  if(outChart)     outChart.destroy();
+  pvChart      = buildChart("pvChart",      makeDatasets(g,"pv"),         "PV (°C)");
+  powerChart   = buildChart("powerChart",   makeDatasets(g,"power_w"),    "Power (W)");
+  currentChart = buildChart("currentChart", makeDatasets(g,"current_a"),  "Current (A)");
+  outChart     = buildChart("outChart",     makeDatasets(g,"output_pct"), "Output %");
+  spChart      = buildChart("spChart",      makeDatasets(g,"setpoint"),   "SP (°C)");
+  ["chartWrap","powerChartWrap","currentChartWrap","outChartWrap","spChartWrap"].forEach(id=>
+    document.getElementById(id).style.display="block");
+}
+
+function statusBadge(s){
+  if(!s)return"";
+  const cls=s==="OK"?"badge-ok":s==="HEATING"?"badge-heat":s.includes("OVER")?"badge-over":"badge-notc";
+  return `<span class="badge ${cls}">${s}</span>`;
+}
+function renderTable(rows){
+  const tbody=document.getElementById("tBody");
+  const shown=rows.slice(-500);
+  tbody.innerHTML=shown.map(r=>`<tr>
+    <td>${new Date(r.ts).toLocaleString()}</td>
+    <td>${r.line}</td><td>${r.zone}</td>
+    <td>${r.pv?.toFixed(1)??"–"}</td>
+    <td>${r.setpoint?.toFixed(1)??"–"}</td>
+    <td>${r.output_pct?.toFixed(1)??"–"}</td>
+    <td>${r.current_a?.toFixed(2)??"–"}</td>
+    <td>${statusBadge(r.status)}</td>
+  </tr>`).join("");
+  if(rows.length>500){
+    const note=document.createElement("tr");
+    note.innerHTML=`<td colspan="8" style="text-align:center;color:#888;padding:8px">
+      Showing last 500 of ${rows.length.toLocaleString()} rows. Download CSV for full dataset.</td>`;
+    tbody.appendChild(note);
+  }
+  document.getElementById("tableWrap").style.display="block";
+}
+
+function setMsg(text,type){
+  document.getElementById("msgArea").innerHTML=
+    text?`<div class="msg msg-${type}">${text}</div>`:"";
+}
+</script>
+</body>
+</html>

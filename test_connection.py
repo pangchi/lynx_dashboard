@@ -60,7 +60,8 @@ except Exception as e:
     print(f"    ✗ Error: {e}")
 
 # ── Test 2: PostgreSQL – bootstrap then verify ────────────────────────────────
-print(f"\n[2] PostgreSQL → {DB_USER}@{DB_HOST}:{DB_PORT}/{DB_NAME}")
+masked = ("*" * len(DB_PASSWORD)) if DB_PASSWORD else "(blank — peer/trust auth)"
+print(f"\n[2] PostgreSQL → {DB_USER}@{DB_HOST}:{DB_PORT}/{DB_NAME}  password={masked}")
 
 # Step 2a: ensure DB + user exist (connects via admin account to 'postgres' DB)
 print(f"    Checking DB via admin ({DB_ADMIN_USER}@{DB_HOST}:{DB_PORT}/postgres)...")

@@ -34,13 +34,14 @@ if missing:
     print("All installed! Starting dashboard...\n")
 
 # ========= IMPORTS =========
-from flask import Flask, render_template_string, request, jsonify
+from flask import Flask, render_template, request, jsonify
 from flask_socketio import SocketIO, emit
 import threading, time, configparser, os
 from datetime import datetime
 
 from lynx_reader import LynxTemperatureSystem
 from lynx_db_logger import LynxDBLogger
+import lynx_history
 from lynx_history  import history_bp, init_history_db
 
 # ========= CONFIG – loaded from config.ini =========
@@ -53,6 +54,7 @@ OI_HOST         = cfg.get    ("modbus",   "host")
 OI_PORT         = cfg.getint ("modbus",   "port")
 MODBUS_TIMEOUT  = cfg.getfloat("modbus",  "timeout")
 SCAN_INTERVAL   = cfg.getint ("modbus",   "scan_interval", fallback=8)
+LINE_VOLTAGE    = cfg.getfloat("modbus",   "line_voltage",  fallback=240.0)
 _LINES          = tuple(int(x) for x in cfg.get("modbus", "lines").split(","))
 
 DB_HOST         = cfg.get    ("database", "host")
@@ -78,7 +80,8 @@ socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 app.register_blueprint(history_bp)
 init_history_db(
     host=DB_HOST, port=DB_PORT,
-    dbname=DB_NAME, user=DB_USER, password=DB_PASSWORD
+    dbname=DB_NAME, user=DB_USER, password=DB_PASSWORD,
+    line_voltage=LINE_VOLTAGE
 )
 
 # DB logger (submit() is non-blocking – safe to call from scanner thread)
@@ -165,74 +168,11 @@ def on_connect():
 
 
 # ========= DASHBOARD HTML =========
-HTML = """<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><title>BriskHeat LYNX – Live Monitor</title>
-<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
-<style>
-body{font-family:Arial,sans-serif;margin:20px;background:#f8f9fa;color:#333}
-h1{color:#2c3e50;margin-bottom:5px}
-.header{display:flex;justify-content:space-between;align-items:center;background:#3498db;color:white;padding:15px 25px;border-radius:8px}
-.header-links a{color:#d6eaf8;text-decoration:none;margin-left:18px;font-size:.9rem}
-.header-links a:hover{color:#fff}
-table{width:100%;border-collapse:collapse;margin-top:20px;background:white;box-shadow:0 4px 20px rgba(0,0,0,.1);border-radius:8px;overflow:hidden}
-th{background:#2c3e50;color:white;padding:12px}
-td{padding:10px;text-align:center}
-tr:nth-child(even){background:#f8f9fa}
-.ok{background:#d4edda}.heating{background:#fff3cd}.over{background:#f8d7da;color:#721c24}.notc{background:#e2e3e5;color:#6c757d}
-input[type=number]{width:80px;padding:6px;border:1px solid #ccc;border-radius:4px}
-button{padding:6px 12px;background:#28a745;color:white;border:none;border-radius:4px;cursor:pointer}
-button:hover{background:#218838}
-.footer{margin-top:20px;text-align:center;color:#666;font-size:0.9em}
-.spinner{display:inline-block;width:16px;height:16px;border:2px solid #f3f3f3;border-top:2px solid #3498db;border-radius:50%;animation:s 1s linear infinite;margin-left:8px}
-@keyframes s{to{transform:rotate(360deg)}}
-</style></head><body>
-<div class="header">
-  <h1>BriskHeat LYNX – Real-Time Dashboard</h1>
-  <div style="display:flex;align-items:center;gap:16px">
-    <div><span id="status">Connecting...</span><span id="spin" class="spinner"></span> <span id="time">Never</span></div>
-    <div class="header-links">
-      <a href="/history">📈 History</a>
-      <a href="/settings">⚙ Settings</a>
-    </div>
-  </div>
-</div>
-<table id="t"><thead><tr>
-<th>Line</th><th>Zone</th><th>SP (°C)</th><th>PV (°C)</th><th>Out (%)</th><th>A</th><th>Status</th><th>New SP</th><th>Set</th>
-</tr></thead><tbody><tr><td colspan="9">Waiting for first scan...</td></tr></tbody></table>
-<div class="footer">OI Gateway: {{host}}:{{port}} • Updates every ~8s • DB logging every {{interval}}s</div>
-<script>
-const socket=io('/live'), tb=document.querySelector('#t tbody'), st=document.getElementById('status'), tm=document.getElementById('time'), sp=document.getElementById('spin');
-socket.on('connected',()=>{st.textContent='LIVE';st.style.color='limegreen';sp.style.display='none'});
-socket.on('update',d=>{
-  tm.textContent=d.human_time;
-  tb.innerHTML='';
-  if(d.zones.length===0){tb.innerHTML='<tr><td colspan="9">No active zones</td></tr>';return;}
-  d.zones.forEach(z=>{
-    const r=document.createElement('tr');
-    r.className = z.status==='OK'?'ok':z.status==='HEATING'?'heating':z.status.includes('OVER')?'over':'notc';
-    r.innerHTML=`<td>${z.line}</td><td>${z.zone}</td><td>${z.setpoint?.toFixed(1)||'--'}</td>
-    <td>${z.pv?.toFixed(1)||'--'}</td><td>${z.output_percent??'--'}</td><td>${z.current?.toFixed(2)||'--'}</td>
-    <td><b>${z.status}</b></td>
-    <td><input type="number" step="0.1" value="${z.setpoint?.toFixed(1)||''}" style="width:70px"></td>
-    <td><button onclick="set(this,${z.line},${z.zone})">Set</button></td>`;
-    tb.appendChild(r);
-  });
-});
-function set(b,l,z){
-  const v=b.closest('tr').querySelector('input').value;
-  if(!v)return alert("Enter setpoint");
-  fetch('/api/setpoint',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({line:l,zone:z,sp:+v})
-  }).then(r=>r.json()).then(d=>d.success&&alert('Setpoint → '+d.setpoint_c+'°C'));
-}
-</script></body></html>"""
 
 
 @app.route("/")
 def index():
-    return render_template_string(
-        HTML, host=OI_HOST, port=OI_PORT, interval=DB_LOG_INTERVAL
-    )
+    return render_template('dashboard.html', host=OI_HOST, port=OI_PORT, interval=DB_LOG_INTERVAL)
 
 
 # ========= API =========
@@ -284,124 +224,11 @@ def _perform_setpoint_write(line, zone, sp):
 
 
 # ========= SETTINGS PAGE =========
-SETTINGS_HTML = """<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><title>LYNX – Settings</title>
-<style>
-  *{box-sizing:border-box;margin:0;padding:0}
-  body{font-family:Arial,sans-serif;background:#f0f2f5;color:#333}
-  .header{background:#2c3e50;color:#fff;padding:14px 24px;display:flex;align-items:center;justify-content:space-between}
-  .header h1{font-size:1.2rem;font-weight:700}
-  .header a{color:#aed6f1;text-decoration:none;font-size:.85rem}
-  .header a:hover{color:#fff}
-  .card{background:#fff;border-radius:8px;box-shadow:0 1px 6px rgba(0,0,0,.08);
-        padding:28px 32px;margin:24px auto;max-width:520px}
-  .card h2{font-size:1rem;font-weight:700;color:#2c3e50;margin-bottom:20px;
-           padding-bottom:10px;border-bottom:2px solid #f0f2f5}
-  .field{margin-bottom:16px}
-  .field label{display:block;font-size:.8rem;font-weight:600;color:#555;
-               text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px}
-  .field input{width:100%;padding:9px 12px;border:1px solid #ccc;border-radius:5px;
-               font-size:.95rem;background:#fafafa;transition:border .15s}
-  .field input:focus{outline:none;border-color:#3498db;background:#fff}
-  .field .hint{font-size:.75rem;color:#999;margin-top:4px}
-  .actions{display:flex;gap:12px;margin-top:24px}
-  .btn{flex:1;padding:10px;border:none;border-radius:5px;cursor:pointer;
-       font-size:.95rem;font-weight:600}
-  .btn-primary{background:#3498db;color:#fff}.btn-primary:hover{background:#2980b9}
-  .btn-test{background:#8e44ad;color:#fff}.btn-test:hover{background:#7d3c98}
-  .msg{padding:10px 14px;border-radius:5px;margin-top:16px;font-size:.9rem;display:none}
-  .msg-ok{background:#d4edda;color:#155724}
-  .msg-err{background:#f8d7da;color:#721c24}
-  .msg-info{background:#d1ecf1;color:#0c5460}
-</style></head><body>
-<div class="header">
-  <h1>⚙ LYNX Settings</h1>
-  <a href="/">← Live Dashboard</a>
-</div>
-<div class="card">
-  <h2>Modbus / OI Gateway</h2>
-  <div class="field">
-    <label>Host (IP Address)</label>
-    <input type="text" id="oi_host" placeholder="192.168.200.20">
-  </div>
-  <div class="field">
-    <label>Port</label>
-    <input type="number" id="oi_port" min="1" max="65535" placeholder="502">
-  </div>
-  <div class="field">
-    <label>Timeout (seconds)</label>
-    <input type="number" id="oi_timeout" min="0.5" max="30" step="0.5" placeholder="4.0">
-  </div>
-  <div class="field">
-    <label>Scan Interval (seconds)</label>
-    <input type="number" id="scan_interval" min="4" max="3600" placeholder="8">
-    <div class="hint">How often the scanner polls the OI Gateway (minimum 4 s)</div>
-  </div>
-  <div class="field">
-    <label>DB Log Interval (seconds)</label>
-    <input type="number" id="db_interval" min="10" max="86400" placeholder="60">
-    <div class="hint">How often zone data is saved to PostgreSQL (minimum 10 s)</div>
-  </div>
-  <div class="actions">
-    <button class="btn btn-test" onclick="testConn()">🔌 Test Connection</button>
-    <button class="btn btn-primary" onclick="saveSettings()">💾 Save & Apply</button>
-  </div>
-  <div class="msg" id="msg"></div>
-</div>
-<script>
-fetch("/api/settings").then(r=>r.json()).then(d=>{
-  document.getElementById("oi_host").value       = d.oi_host;
-  document.getElementById("oi_port").value       = d.oi_port;
-  document.getElementById("oi_timeout").value    = d.oi_timeout;
-  document.getElementById("scan_interval").value = d.scan_interval;
-  document.getElementById("db_interval").value    = d.db_interval;
-});
-function showMsg(text, type) {
-  const el = document.getElementById("msg");
-  el.textContent = text;
-  el.className = "msg msg-" + type;
-  el.style.display = "block";
-  if (type === "ok") setTimeout(() => el.style.display="none", 3000);
-}
-function getValues() {
-  return {
-    oi_host:       document.getElementById("oi_host").value.trim(),
-    oi_port:       parseInt(document.getElementById("oi_port").value),
-    oi_timeout:    parseFloat(document.getElementById("oi_timeout").value),
-    scan_interval: parseInt(document.getElementById("scan_interval").value),
-    db_interval:   parseInt(document.getElementById("db_interval").value),
-  };
-}
-async function testConn() {
-  showMsg("Testing connection...", "info");
-  try {
-    const r = await fetch("/api/settings/test", {
-      method:"POST", headers:{"Content-Type":"application/json"},
-      body:JSON.stringify(getValues())
-    });
-    const d = await r.json();
-    if (d.success) showMsg("✓ Connected! Found " + d.zone_count + " zone(s).", "ok");
-    else showMsg("✗ " + d.error, "err");
-  } catch(e) { showMsg("✗ " + e.message, "err"); }
-}
-async function saveSettings() {
-  showMsg("Saving...", "info");
-  try {
-    const r = await fetch("/api/settings", {
-      method:"POST", headers:{"Content-Type":"application/json"},
-      body:JSON.stringify(getValues())
-    });
-    const d = await r.json();
-    if (d.success) showMsg("✓ Settings saved and applied.", "ok");
-    else showMsg("✗ " + d.error, "err");
-  } catch(e) { showMsg("✗ " + e.message, "err"); }
-}
-</script></body></html>"""
 
 
 @app.route("/settings")
 def settings_page():
-    return render_template_string(SETTINGS_HTML)
+    return render_template('settings.html')
 
 
 @app.route("/api/settings", methods=["GET"])
@@ -413,12 +240,13 @@ def api_settings_get():
             "oi_timeout":    MODBUS_TIMEOUT,
             "scan_interval": SCAN_INTERVAL,
             "db_interval":   DB_LOG_INTERVAL,
+            "line_voltage":  LINE_VOLTAGE,
         })
 
 
 @app.route("/api/settings", methods=["POST"])
 def api_settings_post():
-    global OI_HOST, OI_PORT, MODBUS_TIMEOUT, SCAN_INTERVAL, DB_LOG_INTERVAL
+    global OI_HOST, OI_PORT, MODBUS_TIMEOUT, SCAN_INTERVAL, DB_LOG_INTERVAL, LINE_VOLTAGE
     try:
         j = request.get_json()
         host     = str(j["oi_host"]).strip()
@@ -431,16 +259,20 @@ def api_settings_post():
         if timeout < 0.5:        raise ValueError("Timeout must be >= 0.5 s")
         if interval < 4:         raise ValueError("Scan interval must be >= 4 s")
 
-        db_interval = int(j["db_interval"])
-        if db_interval < 10: raise ValueError("DB interval must be >= 10 s")
+        db_interval  = int(j["db_interval"])
+        line_voltage = float(j["line_voltage"])
+        if db_interval < 10:   raise ValueError("DB interval must be >= 10 s")
+        if line_voltage <= 0:  raise ValueError("Line voltage must be > 0")
 
         with settings_lock:
             OI_HOST        = host
             OI_PORT        = port
             MODBUS_TIMEOUT = timeout
             SCAN_INTERVAL  = interval
-            DB_LOG_INTERVAL = db_interval
-            db_logger._interval = db_interval   # takes effect on next write cycle
+            DB_LOG_INTERVAL          = db_interval
+            LINE_VOLTAGE             = line_voltage
+            lynx_history._line_voltage = line_voltage
+            db_logger._interval      = db_interval
 
         cfg.read(_CFG_FILE)
         cfg.set("modbus",    "host",          host)
@@ -448,6 +280,7 @@ def api_settings_post():
         cfg.set("modbus",    "timeout",       str(timeout))
         cfg.set("modbus",    "scan_interval", str(interval))
         cfg.set("database",  "log_interval",  str(db_interval))
+        cfg.set("modbus",    "line_voltage",  str(line_voltage))
         with open(_CFG_FILE, "w") as f:
             cfg.write(f)
 
