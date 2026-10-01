@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>LYNX – Settings</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:Arial,sans-serif;background:#f0f2f5;color:#333}
+  .header{background:#2c3e50;color:#fff;padding:14px 24px;display:flex;align-items:center;justify-content:space-between}
+  .header h1{font-size:1.2rem;font-weight:700}
+  .header a{color:#aed6f1;text-decoration:none;font-size:.85rem}
+  .header a:hover{color:#fff}
+  .card{background:#fff;border-radius:8px;box-shadow:0 1px 6px rgba(0,0,0,.08);
+        padding:28px 32px;margin:24px auto;max-width:520px}
+  .card h2{font-size:1rem;font-weight:700;color:#2c3e50;margin-bottom:20px;
+           padding-bottom:10px;border-bottom:2px solid #f0f2f5}
+  .field{margin-bottom:16px}
+  .field label{display:block;font-size:.8rem;font-weight:600;color:#555;
+               text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px}
+  .field input{width:100%;padding:9px 12px;border:1px solid #ccc;border-radius:5px;
+               font-size:.95rem;background:#fafafa;transition:border .15s}
+  .field input:focus{outline:none;border-color:#3498db;background:#fff}
+  .field .hint{font-size:.75rem;color:#999;margin-top:4px}
+  .actions{display:flex;gap:12px;margin-top:24px}
+  .btn{flex:1;padding:10px;border:none;border-radius:5px;cursor:pointer;
+       font-size:.95rem;font-weight:600}
+  .btn-primary{background:#3498db;color:#fff}.btn-primary:hover{background:#2980b9}
+  .btn-test{background:#8e44ad;color:#fff}.btn-test:hover{background:#7d3c98}
+  .msg{padding:10px 14px;border-radius:5px;margin-top:16px;font-size:.9rem;display:none}
+  .mode-toggle{display:flex;gap:0;border:1px solid #ccc;border-radius:5px;
+               overflow:hidden;margin-bottom:4px;width:fit-content}
+  .mode-btn{padding:7px 20px;border:none;background:#fafafa;cursor:pointer;
+            font-size:.9rem;font-weight:600;color:#555;transition:all .15s}
+  .mode-btn.active{background:#3498db;color:#fff}
+  .section-divider{margin:18px 0 14px;padding-bottom:8px;border-bottom:2px solid #f0f2f5;
+                   font-size:.78rem;font-weight:700;color:#888;text-transform:uppercase;
+                   letter-spacing:.06em}
+  .msg-ok{background:#d4edda;color:#155724}
+  .msg-err{background:#f8d7da;color:#721c24}
+  .msg-info{background:#d1ecf1;color:#0c5460}
+</style></head><body>
+<div class="header">
+  <h1>⚙ LYNX Settings</h1>
+  <a href="/">← Live Dashboard</a>
+</div>
+<div class="card">
+  <h2 id="modbusCardTitle">Modbus / OI Gateway</h2>
+  <div class="field">
+    <label>Device Type</label>
+    <select id="device_type" onchange="onDeviceTypeChange()">
+      <option value="lynx">BriskHeat LYNX (OI Gateway)</option>
+      <option value="centipede2">BriskHeat Centipede 2 (RS-232)</option>
+    </select>
+    <div class="hint">Centipede 2 always uses RS-232 at 19200 baud 8N1</div>
+  </div>
+  <div class="field">
+    <label>Connection Mode</label>
+    <div class="mode-toggle">
+      <button class="mode-btn active" id="btnTCP" onclick="setMode('tcp')">🌐 TCP</button>
+      <button class="mode-btn"        id="btnRTU" onclick="setMode('rtu')">🔌 RTU (Serial)</button>
+    </div>
+    <input type="hidden" id="modbus_mode" value="tcp">
+    <div class="hint">TCP = Ethernet/IP gateway &nbsp;|&nbsp; RTU = direct RS-232/RS-485 serial</div>
+  </div>
+
+  <!-- TCP fields -->
+  <div id="tcpFields">
+    <div class="field">
+      <label>Host (IP Address)</label>
+      <input type="text" id="oi_host" placeholder="192.168.200.20">
+    </div>
+    <div class="field">
+      <label>Port</label>
+      <input type="number" id="oi_port" min="1" max="65535" placeholder="502">
+    </div>
+  </div>
+
+  <!-- RTU / Serial fields -->
+  <div id="rtuFields" style="display:none">
+    <div class="field">
+      <label>Serial Port</label>
+      <input type="text" id="serial_port" placeholder="/dev/ttyUSB0">
+      <div class="hint">Linux: /dev/ttyUSB0 or /dev/ttyS0 &nbsp;|&nbsp; Windows: COM3</div>
+    </div>
+    <div class="field">
+      <label>Baud Rate</label>
+      <div style="display:flex;gap:8px;align-items:center">
+        <select id="serial_baud" style="flex:1">
+          <option>1200</option><option>2400</option><option>4800</option>
+          <option value="9600" selected>9600</option><option>19200</option>
+          <option>38400</option><option>57600</option><option>115200</option>
+        </select>
+        <button onclick="autoDetectBaud()" id="btnAutoDetect"
+                style="padding:7px 14px;border:1px solid #ccc;border-radius:5px;
+                       background:#fafafa;cursor:pointer;font-size:.82rem;white-space:nowrap">
+          🔍 Auto-Detect
+        </button>
+      </div>
+    </div>
+    <div class="field">
+      <label>Parity</label>
+      <select id="serial_parity">
+        <option value="N">None (N)</option>
+        <option value="E">Even (E)</option>
+        <option value="O">Odd (O)</option>
+      </select>
+    </div>
+    <div class="field" id="c2MaxUnitsField" style="display:none">
+      <label>Max Units to Scan</label>
+      <input type="number" id="c2_max_units" min="1" max="256" step="1" placeholder="128">
+      <div class="hint">Centipede 2 only — highest zone number to scan (e.g. 73 if you have zones 1–73)</div>
+    </div>
+    <div class="field" id="c2PasswordField" style="display:none">
+      <label>OI Password</label>
+      <input type="text" id="c2_password" placeholder="briskheat" autocomplete="off">
+      <div class="hint">Centipede 2 only — C2MOD-OI-7 LUI login password (default: briskheat)</div>
+    </div>
+    <div class="field" id="c2DumpSecsField" style="display:none">
+      <label>Dump Duration (s)</label>
+      <input type="number" id="c2_dump_secs" min="1" max="30" step="1" placeholder="3">
+      <div class="hint">Centipede 2 only — seconds for Dump command (increase if zones are missed)</div>
+    </div>
+  </div>
+  <div class="field">
+    <label>Timeout (seconds)</label>
+    <input type="number" id="oi_timeout" min="0.5" max="30" step="0.5" placeholder="4.0">
+  </div>
+  <div class="field">
+    <label>Scan Interval (seconds)</label>
+    <input type="number" id="scan_interval" min="4" max="3600" placeholder="8">
+    <div class="hint" id="scanIntervalHint">How often the scanner polls the OI Gateway (minimum 4 s)</div>
+  </div>
+  <div class="field">
+    <label>DB Log Interval (seconds)</label>
+    <input type="number" id="db_interval" min="10" max="86400" placeholder="60">
+    <div class="hint">How often zone data is saved to PostgreSQL (minimum 10 s)</div>
+  </div>
+  <div class="field">
+    <label>Line Voltage (V)</label>
+    <input type="number" id="line_voltage" min="1" max="1000" step="1" placeholder="240">
+    <div class="hint">Used to calculate zone power (W = V × A) and kWh accumulation</div>
+  </div>
+  <div class="field">
+    <label>Nominal Heater Power (W)</label>
+    <input type="number" id="nominal_power_w" min="0" max="100000" step="10" placeholder="0">
+    <div class="hint">For Centipede 2 only (no current sensor) — heater rated wattage per zone.
+      Leave 0 to use duty cycle % as relative power proxy.</div>
+  </div>
+  <div class="field">
+    <label>Purge Threshold (%)</label>
+    <input type="number" id="purge_threshold" min="50" max="99" step="1" placeholder="80">
+    <div class="hint">Auto-delete oldest DB rows when disk usage reaches this % (50–99)</div>
+  </div>
+  <div class="field">
+    <label>Purge Keep (%)</label>
+    <input type="number" id="purge_keep_pct" min="10" max="90" step="1" placeholder="60">
+    <div class="hint">After purge, keep the newest this % of rows (10–90)</div>
+  </div>
+  <div class="field">
+    <label>API Key</label>
+    <input type="text" id="api_key" placeholder="Leave blank to disable authentication"
+           autocomplete="off" spellcheck="false">
+    <div class="hint">External REST clients must send this as <code>X-API-Key</code> header or <code>?api_key=</code> param. Browser pages are always exempt.</div>
+  </div>
+  <div class="actions">
+    <button class="btn btn-test" onclick="testConn()">🔌 Test Connection</button>
+    <button class="btn btn-primary" onclick="saveSettings()">💾 Save & Apply</button>
+  </div>
+  <div class="msg" id="msg"></div>
+</div>
+<script>
+fetch("/api/settings").then(r=>r.json()).then(d=>{
+  document.getElementById("oi_host").value       = d.oi_host;
+  document.getElementById("oi_port").value       = d.oi_port;
+  document.getElementById("oi_timeout").value    = d.oi_timeout;
+  document.getElementById("scan_interval").value = d.scan_interval;
+  document.getElementById("db_interval").value    = d.db_interval;
+  document.getElementById("line_voltage").value    = d.line_voltage;
+  document.getElementById("nominal_power_w").value = d.nominal_power_w || 0;
+  document.getElementById("serial_port").value   = d.serial_port   || "/dev/ttyUSB0";
+  document.getElementById("serial_baud").value   = d.serial_baud   || 9600;
+  document.getElementById("serial_parity").value = d.serial_parity || "N";
+  document.getElementById("device_type").value   = d.device_type   || "lynx";
+  document.getElementById("c2_max_units").value  = d.c2_max_units  || 128;
+  document.getElementById("c2_password").value   = d.c2_password   || "briskheat";
+  document.getElementById("c2_dump_secs").value  = d.c2_dump_secs  || 3;
+  document.getElementById("modbus_mode").value = d.modbus_mode || "tcp";
+  setMode(d.modbus_mode || "tcp");
+  onDeviceTypeChange();
+  document.getElementById("purge_threshold").value = d.purge_threshold;
+  document.getElementById("purge_keep_pct").value  = d.purge_keep_pct;
+  document.getElementById("api_key").value          = d.api_key || "";
+});
+function showMsg(text, type) {
+  const el = document.getElementById("msg");
+  el.textContent = text;
+  el.className = "msg msg-" + type;
+  el.style.display = "block";
+  if (type === "ok") setTimeout(() => el.style.display="none", 3000);
+}
+function getValues() {
+  return {
+    device_type:   document.getElementById("device_type").value,
+    c2_max_units:  parseInt(document.getElementById("c2_max_units").value) || 128,
+    c2_password:   document.getElementById("c2_password").value.trim(),
+    c2_dump_secs:  parseInt(document.getElementById("c2_dump_secs").value) || 3,
+    modbus_mode:   document.getElementById("modbus_mode").value,
+    oi_host:       document.getElementById("oi_host").value.trim(),
+    oi_port:       parseInt(document.getElementById("oi_port").value),
+    oi_timeout:    parseFloat(document.getElementById("oi_timeout").value),
+    scan_interval: parseInt(document.getElementById("scan_interval").value),
+    db_interval:   parseInt(document.getElementById("db_interval").value),
+    line_voltage:    parseFloat(document.getElementById("line_voltage").value),
+    nominal_power_w: parseFloat(document.getElementById("nominal_power_w").value) || 0,
+    serial_port:   document.getElementById("serial_port").value.trim(),
+    serial_baud:   parseInt(document.getElementById("serial_baud").value),
+    serial_parity: document.getElementById("serial_parity").value,
+    purge_threshold: parseFloat(document.getElementById("purge_threshold").value),
+    purge_keep_pct:  parseFloat(document.getElementById("purge_keep_pct").value),
+    api_key:         document.getElementById("api_key").value.trim(),
+  };
+}
+function onDeviceTypeChange() {
+  const isCentipede = document.getElementById("device_type").value === "centipede2";
+
+  // Update card heading and hints to reflect actual device
+  document.getElementById("modbusCardTitle").textContent =
+    isCentipede ? "Modbus / Centipede 2 (RS-232)" : "Modbus / OI Gateway";
+  if (document.getElementById("scanIntervalHint")) {
+    document.getElementById("scanIntervalHint").textContent =
+      isCentipede
+        ? "How often the scanner polls the Centipede 2 modules (minimum 4 s)"
+        : "How often the scanner polls the OI Gateway (minimum 4 s)";
+  }
+
+  if (isCentipede) {
+    setMode("rtu");
+    document.getElementById("serial_baud").value    = "19200";
+    document.getElementById("serial_parity").value  = "N";
+    document.getElementById("serial_baud").disabled    = true;
+    document.getElementById("serial_parity").disabled  = true;
+    document.getElementById("btnTCP").disabled = true;
+    document.getElementById("btnRTU").disabled = true;
+    document.getElementById("btnAutoDetect").style.display = "none";
+    document.getElementById("c2MaxUnitsField").style.display = "block";
+  } else {
+    document.getElementById("serial_baud").disabled    = false;
+    document.getElementById("serial_parity").disabled  = false;
+    document.getElementById("btnTCP").disabled = false;
+    document.getElementById("btnRTU").disabled = false;
+    document.getElementById("btnAutoDetect").style.display = "inline-block";
+    document.getElementById("c2MaxUnitsField").style.display = "none";
+  }
+}
+
+async function autoDetectBaud() {
+  const btn  = document.getElementById("btnAutoDetect");
+  const port = document.getElementById("serial_port").value.trim();
+  const dtype= document.getElementById("device_type").value;
+  if (!port) { showMsg("Enter a serial port first.", "err"); return; }
+
+  btn.textContent = "Detecting…";
+  btn.disabled    = true;
+  try {
+    const r = await fetch("/api/settings/detect_baud", {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({serial_port: port, device_type: dtype})
+    });
+    const d = await r.json();
+    if (d.success) {
+      document.getElementById("serial_baud").value = d.baud;
+      showMsg(`✓ Detected ${d.baud} baud on ${port}`, "ok");
+    } else {
+      showMsg("✗ " + (d.error || "No response — check port and cable"), "err");
+    }
+  } catch(e) {
+    showMsg("✗ Request failed: " + e.message, "err");
+  } finally {
+    btn.textContent = "🔍 Auto-Detect";
+    btn.disabled    = false;
+  }
+}
+
+function setMode(mode) {
+  const isTCP = mode !== "rtu";
+  document.getElementById("modbus_mode").value       = isTCP ? "tcp" : "rtu";
+  document.getElementById("tcpFields").style.display = isTCP ? "block" : "none";
+  document.getElementById("rtuFields").style.display = isTCP ? "none"  : "block";
+  document.getElementById("btnTCP").className = "mode-btn" + (isTCP  ? " active" : "");
+  document.getElementById("btnRTU").className = "mode-btn" + (!isTCP ? " active" : "");
+}
+
+async function testConn() {
+  showMsg("Testing connection...", "info");
+  try {
+    const v = getValues();
+    const r = await fetch("/api/settings/test", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body:JSON.stringify(v)
+    });
+    const d = await r.json();
+    const via = v.modbus_mode==="rtu"
+      ? v.serial_port
+      : (v.oi_host + ":" + v.oi_port);
+    if (d.success) showMsg("✓ Connected via " + via + "! Found " + d.zone_count + " zone(s).", "ok");
+    else showMsg("✗ " + d.error, "err");
+  } catch(e) { showMsg("✗ " + e.message, "err"); }
+}
+async function saveSettings() {
+  showMsg("Saving...", "info");
+  try {
+    const r = await fetch("/api/settings", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body:JSON.stringify(getValues())
+    });
+    const d = await r.json();
+    if (d.success) showMsg("✓ Settings saved and applied.", "ok");
+    else showMsg("✗ " + d.error, "err");
+  } catch(e) { showMsg("✗ " + e.message, "err"); }
+}
+</script></body></html>

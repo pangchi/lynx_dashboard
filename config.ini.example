@@ -1,0 +1,49 @@
+[modbus]
+# Connection mode: tcp (default) or rtu
+mode        = tcp
+device_type  = lynx
+c2_max_units = 128
+c2_password  = briskheat
+c2_dump_secs = 3
+
+# TCP settings (used when mode = tcp)
+host    = 192.168.200.20
+port    = 502
+timeout = 4.0
+line_voltage    = 240
+nominal_power_w = 0
+scan_interval = 8
+lines   = 1,2,3,4
+
+[serial]
+# RS-232 / Modbus RTU settings (used when [modbus] mode = rtu)
+port     = /dev/ttyUSB0
+baudrate = 9600
+bytesize = 8
+parity   = N
+stopbits = 1
+
+[database]
+host     = localhost
+port     = 5432
+name     = lynx
+user     = lynx_user
+password = secret
+log_interval = 60
+purge_threshold = 80
+purge_keep_pct  = 60
+# (postgres is the default superuser on most installs)
+admin_user     = postgres
+admin_password =
+
+[flask]
+secret_key = BriskHeat2025
+port       = 5000
+# Pass as X-API-Key header or ?api_key= query param.
+api_key    =
+
+[dashboard]
+# Change to the PC's IP when running set_all from a remote machine
+ip       = 127.0.0.1
+timezone = UTC
+timeout = 8

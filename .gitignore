@@ -1,0 +1,9 @@
+config.ini
+schedule.json
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+*.zip
+c2_scan.py

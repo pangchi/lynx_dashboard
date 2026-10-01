@@ -1,0 +1,382 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>LYNX – Setpoint Schedule</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:Arial,sans-serif;background:#f0f2f5;color:#333;min-height:100vh}
+
+  .header{background:#2c3e50;color:#fff;padding:14px 24px;display:flex;
+          align-items:center;justify-content:space-between}
+  .header h1{font-size:1.2rem;font-weight:700}
+  .header-links a{color:#aed6f1;text-decoration:none;margin-left:18px;font-size:.85rem}
+  .header-links a:hover{color:#fff}
+
+  /* toolbar */
+  .toolbar{padding:16px 24px;display:flex;align-items:center;gap:12px}
+  .btn{padding:8px 18px;border:none;border-radius:5px;cursor:pointer;
+       font-size:.9rem;font-weight:600;display:inline-flex;align-items:center;gap:6px}
+  .btn-primary{background:#3498db;color:#fff}.btn-primary:hover{background:#2980b9}
+  .btn-danger {background:#e74c3c;color:#fff}.btn-danger:hover{background:#c0392b}
+  .btn-ghost  {background:#fff;color:#555;border:1px solid #ccc}
+  .btn-ghost:hover{background:#f5f5f5}
+  .btn-sm{padding:5px 12px;font-size:.82rem}
+
+  /* schedule cards */
+  .cards{padding:0 24px 32px;display:flex;flex-direction:column;gap:14px}
+  .card{background:#fff;border-radius:8px;box-shadow:0 1px 6px rgba(0,0,0,.08);
+        padding:18px 20px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+  .card.disabled{opacity:.5}
+  .card-main{flex:1;min-width:200px}
+  .card-name{font-size:1rem;font-weight:700;color:#2c3e50;margin-bottom:4px}
+  .card-meta{font-size:.82rem;color:#666;display:flex;flex-wrap:wrap;gap:10px}
+  .card-meta span{display:flex;align-items:center;gap:4px}
+  .pill{display:inline-block;padding:2px 8px;border-radius:10px;
+        font-size:.75rem;font-weight:600;background:#eaf4fb;color:#2980b9}
+  .pill-day{background:#fef9e7;color:#b7770d}
+  .pill-zone{background:#eafaf1;color:#1e8449}
+  .pill-all{background:#f5eef8;color:#7d3c98}
+  .card-actions{display:flex;gap:8px;align-items:center}
+
+  /* toggle switch */
+  .switch{position:relative;display:inline-block;width:40px;height:22px}
+  .switch input{opacity:0;width:0;height:0}
+  .slider{position:absolute;cursor:pointer;inset:0;background:#ccc;
+          border-radius:22px;transition:.3s}
+  .slider:before{position:absolute;content:"";height:16px;width:16px;left:3px;
+                 bottom:3px;background:#fff;border-radius:50%;transition:.3s}
+  input:checked + .slider{background:#27ae60}
+  input:checked + .slider:before{transform:translateX(18px)}
+
+  /* empty state */
+  .empty{text-align:center;padding:60px 24px;color:#aaa}
+  .empty svg{margin-bottom:12px;opacity:.35}
+
+  /* modal */
+  .overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);
+            z-index:100;align-items:center;justify-content:center}
+  .overlay.open{display:flex}
+  .modal{background:#fff;border-radius:10px;padding:28px 32px;width:520px;
+         max-width:95vw;max-height:90vh;overflow-y:auto;
+         box-shadow:0 8px 40px rgba(0,0,0,.2)}
+  .modal h2{font-size:1.1rem;font-weight:700;color:#2c3e50;margin-bottom:20px}
+  .form-row{margin-bottom:16px}
+  .form-row label{display:block;font-size:.78rem;font-weight:600;color:#555;
+                  text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px}
+  .form-row input,.form-row select{
+      width:100%;padding:9px 12px;border:1px solid #ccc;border-radius:5px;
+      font-size:.92rem;background:#fafafa}
+  .form-row input:focus,.form-row select:focus{
+      outline:none;border-color:#3498db;background:#fff}
+
+  /* day picker */
+  .day-grid{display:flex;gap:8px;flex-wrap:wrap}
+  .day-btn{width:42px;height:42px;border-radius:50%;border:2px solid #ddd;
+           background:#fff;cursor:pointer;font-size:.82rem;font-weight:700;
+           color:#555;transition:all .15s;display:flex;align-items:center;
+           justify-content:center}
+  .day-btn.on{background:#3498db;border-color:#3498db;color:#fff}
+
+  /* zone multi-select */
+  .zone-list{max-height:180px;overflow-y:auto;border:1px solid #ddd;
+             border-radius:5px;padding:6px}
+  .zone-item{display:flex;align-items:center;gap:8px;padding:5px 8px;
+             border-radius:4px;cursor:pointer;font-size:.88rem}
+  .zone-item:hover{background:#f0f6ff}
+  .zone-item input{width:16px;height:16px;cursor:pointer}
+  .zone-hint{font-size:.75rem;color:#888;margin-top:5px}
+
+  .modal-footer{display:flex;gap:10px;justify-content:flex-end;margin-top:24px;
+                padding-top:16px;border-top:1px solid #f0f0f0}
+
+  .msg{padding:10px 14px;border-radius:5px;margin:0 24px 12px;font-size:.88rem}
+  .msg-err{background:#f8d7da;color:#721c24}
+  .msg-ok {background:#d4edda;color:#155724}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>🕐 LYNX – Setpoint Schedule</h1>
+  <div class="header-links">
+    <a href="/">← Dashboard</a>
+    <a href="/history">📈 History</a>
+    <a href="/settings">⚙ Settings</a>
+  </div>
+</div>
+
+<div class="toolbar">
+  <button class="btn btn-primary" onclick="openModal()">＋ Add Schedule</button>
+</div>
+
+<div id="msgArea"></div>
+<div class="cards" id="cardList"></div>
+
+<!-- modal -->
+<div class="overlay" id="overlay">
+  <div class="modal">
+    <h2 id="modalTitle">Add Schedule</h2>
+    <input type="hidden" id="editId">
+
+    <div class="form-row">
+      <label>Name</label>
+      <input type="text" id="fName" placeholder="e.g. Night setback">
+    </div>
+    <div class="form-row">
+      <label>Setpoint (°C)</label>
+      <input type="number" id="fSp" step="0.1" placeholder="60.0">
+    </div>
+    <div class="form-row">
+      <label>Time <span id="tzLabel" style="font-weight:400;color:#888;text-transform:none;letter-spacing:0"></span></label>
+      <input type="time" id="fTime">
+    </div>
+    <div class="form-row">
+      <label>Days</label>
+      <div class="day-grid">
+        <button class="day-btn" data-d="0" onclick="toggleDay(this)">Mon</button>
+        <button class="day-btn" data-d="1" onclick="toggleDay(this)">Tue</button>
+        <button class="day-btn" data-d="2" onclick="toggleDay(this)">Wed</button>
+        <button class="day-btn" data-d="3" onclick="toggleDay(this)">Thu</button>
+        <button class="day-btn" data-d="4" onclick="toggleDay(this)">Fri</button>
+        <button class="day-btn" data-d="5" onclick="toggleDay(this)">Sat</button>
+        <button class="day-btn" data-d="6" onclick="toggleDay(this)">Sun</button>
+      </div>
+      <div style="margin-top:8px;display:flex;gap:8px">
+        <button class="btn btn-ghost btn-sm" onclick="setDays([0,1,2,3,4])">Weekdays</button>
+        <button class="btn btn-ghost btn-sm" onclick="setDays([5,6])">Weekend</button>
+        <button class="btn btn-ghost btn-sm" onclick="setDays([0,1,2,3,4,5,6])">Every day</button>
+      </div>
+    </div>
+    <div class="form-row">
+      <label>Zones</label>
+      <div class="zone-list" id="zoneList">
+        <div style="color:#aaa;font-size:.85rem;padding:8px">Loading zones…</div>
+      </div>
+      <div class="zone-hint">Leave all unchecked to apply to <strong>all active zones</strong> at fire time.</div>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveEntry()">💾 Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const DAY_NAMES = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+// Browser's IANA timezone — used for display only
+const BROWSER_TZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+// Convert "HH:MM" browser local time → {time_utc, day_offset}
+// day_offset: 0 = same UTC day, -1 = UTC day is previous, +1 = UTC day is next
+// Uses today's date so DST offsets are correct for the current period
+function localToUTC(hhmm) {
+  if (!hhmm) return {time_utc: "", day_offset: 0};
+  const today = new Date().toLocaleDateString("en-CA"); // "YYYY-MM-DD" local
+  const localDate = new Date(today + "T" + hhmm + ":00");
+  const h = String(localDate.getUTCHours()).padStart(2,"0");
+  const m = String(localDate.getUTCMinutes()).padStart(2,"0");
+  // Compare UTC date vs local date to get day offset
+  const localDay = new Date(today + "T12:00:00").getDay(); // local weekday (0=Sun)
+  const utcDay   = localDate.getUTCDay();
+  let offset = 0;
+  if (utcDay !== localDay) {
+    // Determine direction: if UTC day is "behind" local day
+    offset = (utcDay - localDay + 7) % 7;
+    if (offset > 3) offset -= 7;  // e.g. +6 → -1
+  }
+  return {time_utc: h + ":" + m, day_offset: offset};
+}
+
+// Convert "HH:MM" UTC → "HH:MM" in browser local timezone for display
+function utcToLocal(hhmm) {
+  if (!hhmm) return "";
+  const d = new Date();
+  const [h, m] = hhmm.split(":").map(Number);
+  d.setUTCHours(h, m, 0, 0);
+  return d.toLocaleTimeString("en-GB", {
+    hour: "2-digit", minute: "2-digit",
+    timeZone: BROWSER_TZ, hour12: false
+  });
+}
+
+let _zones = [];   // live zones from /api/status
+
+// ── init ─────────────────────────────────────────────────────────────────────
+async function init() {
+  document.getElementById('tzLabel').textContent = '(' + BROWSER_TZ + ')';
+  await fetchZones();
+  await renderCards();
+}
+
+async function fetchZones() {
+  try {
+    const r = await fetch("/api/status");
+    const d = await r.json();
+    _zones  = (d.zones || []).sort((a,b)=>a.line-b.line||a.zone-b.zone);
+  } catch(e) { _zones = []; }
+}
+
+// ── render cards ──────────────────────────────────────────────────────────────
+async function renderCards() {
+  const res  = await fetch("/api/schedule");
+  const list = await res.json();
+  const el   = document.getElementById("cardList");
+
+  if (!list.length) {
+    el.innerHTML = `<div class="empty">
+      <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="1.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      <p>No schedules yet.</p><p style="margin-top:6px;font-size:.85rem">Click <b>+ Add Schedule</b> to get started.</p>
+    </div>`;
+    return;
+  }
+
+  el.innerHTML = list.map(e => {
+    const dayLabels = e.days.map(d=>DAY_NAMES[d]).join(", ");
+    const zoneLabels = e.zones?.length
+      ? e.zones.map(z=>`L${z.line}-Z${z.zone}`).join(", ")
+      : "All zones";
+    const zonePillClass = e.zones?.length ? "pill-zone" : "pill-all";
+    return `
+    <div class="card ${e.enabled===false?'disabled':''}" id="card-${e.id}">
+      <div class="card-main">
+        <div class="card-name">${escHtml(e.name||'Unnamed')}</div>
+        <div class="card-meta">
+          <span>🕐 <b>${utcToLocal(e.time_utc || e.time)}</b> <span style="font-size:.72rem;color:#aaa">(local)</span></span>
+          <span>🌡 <b>${e.setpoint}°C</b></span>
+          <span>${e.days.map(d=>`<span class="pill pill-day">${DAY_NAMES[d]}</span>`).join('')}</span>
+          <span><span class="pill ${zonePillClass}">${escHtml(zoneLabels)}</span></span>
+        </div>
+      </div>
+      <div class="card-actions">
+        <label class="switch" title="${e.enabled===false?'Enable':'Disable'}">
+          <input type="checkbox" ${e.enabled!==false?'checked':''}
+                 onchange="toggleEntry('${e.id}',this)">
+          <span class="slider"></span>
+        </label>
+        <button class="btn btn-ghost btn-sm" onclick="editEntry(${JSON.stringify(e).replace(/"/g,'&quot;')})">✏ Edit</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteEntry('${e.id}')">🗑</button>
+      </div>
+    </div>`;
+  }).join("");
+}
+
+// ── modal ─────────────────────────────────────────────────────────────────────
+function openModal(entry) {
+  document.getElementById("editId").value  = entry?.id || "";
+  document.getElementById("modalTitle").textContent = entry ? "Edit Schedule" : "Add Schedule";
+  document.getElementById("fName").value   = entry?.name    || "";
+  document.getElementById("fSp").value     = entry?.setpoint ?? "";
+  document.getElementById("fTime").value   = entry?.time_utc ? utcToLocal(entry.time_utc) : (entry?.time || "");
+
+  // Days
+  document.querySelectorAll(".day-btn").forEach(b => {
+    b.className = "day-btn" + ((entry?.days||[]).includes(+b.dataset.d) ? " on" : "");
+  });
+
+  // Zone list
+  const zl = document.getElementById("zoneList");
+  if (!_zones.length) {
+    zl.innerHTML = `<div style="color:#aaa;font-size:.85rem;padding:8px">
+      No live zones (scanner may not have data yet).<br>Leave unchecked to target all zones.</div>`;
+  } else {
+    zl.innerHTML = _zones.map(z => {
+      const key     = `L${z.line}-Z${z.zone}`;
+      const checked = entry?.zones?.some(ez=>ez.line===z.line&&ez.zone===z.zone) ? "checked" : "";
+      return `<label class="zone-item">
+        <input type="checkbox" value="${z.line}|${z.zone}" ${checked}>
+        ${key} &nbsp;<span style="color:#999;font-size:.8rem">(PV ${z.pv?.toFixed(1)||'--'}°C)</span>
+      </label>`;
+    }).join("");
+  }
+
+  document.getElementById("overlay").classList.add("open");
+}
+
+function closeModal() {
+  document.getElementById("overlay").classList.remove("open");
+}
+
+function editEntry(entry) { openModal(entry); }
+
+function toggleDay(btn) {
+  btn.className = btn.className.includes(" on") ? "day-btn" : "day-btn on";
+}
+function setDays(days) {
+  document.querySelectorAll(".day-btn").forEach(b => {
+    b.className = "day-btn" + (days.includes(+b.dataset.d) ? " on" : "");
+  });
+}
+
+async function saveEntry() {
+  const id = document.getElementById("editId").value;
+  const days = [...document.querySelectorAll(".day-btn.on")].map(b=>+b.dataset.d);
+  const zones = [...document.querySelectorAll("#zoneList input:checked")].map(cb => {
+    const [line,zone] = cb.value.split("|");
+    return {line:+line, zone:+zone};
+  });
+
+  const entry = {
+    name:     document.getElementById("fName").value.trim() || "Unnamed",
+    setpoint: parseFloat(document.getElementById("fSp").value),
+    ...localToUTC(document.getElementById("fTime").value),  // sets time_utc + day_offset
+    time:     document.getElementById("fTime").value,  // local time display fallback
+    days,
+    zones,
+    enabled:  true,
+  };
+  if (id) entry.id = id;
+
+  if (!entry.time)              { showMsg("Please set a time.", "err"); return; }
+  if (!days.length)             { showMsg("Select at least one day.", "err"); return; }
+  if (isNaN(entry.setpoint))    { showMsg("Enter a valid setpoint.", "err"); return; }
+
+  try {
+    const r = await fetch("/api/schedule", {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify(entry)
+    });
+    const d = await r.json();
+    if (d.error) { showMsg(d.error, "err"); return; }
+    closeModal();
+    showMsg("Schedule saved.", "ok");
+    await renderCards();
+  } catch(e) { showMsg(e.message, "err"); }
+}
+
+async function deleteEntry(id) {
+  if (!confirm("Delete this schedule?")) return;
+  await fetch(`/api/schedule/${id}`, {method:"DELETE"});
+  await renderCards();
+}
+
+async function toggleEntry(id, cb) {
+  const r = await fetch(`/api/schedule/${id}/toggle`, {method:"POST"});
+  const d = await r.json();
+  if (!d.success) { cb.checked = !cb.checked; }
+  const card = document.getElementById(`card-${id}`);
+  if (card) card.className = "card" + (d.enabled===false?" disabled":"");
+}
+
+function showMsg(text, type) {
+  const el = document.getElementById("msgArea");
+  el.innerHTML = `<div class="msg msg-${type}">${text}</div>`;
+  if (type==="ok") setTimeout(()=>el.innerHTML="", 3000);
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+}
+
+// Close modal on overlay click
+document.getElementById("overlay").addEventListener("click", e => {
+  if (e.target === e.currentTarget) closeModal();
+});
+
+init();
+</script>
+</body>
+</html>

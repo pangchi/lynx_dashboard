@@ -1,0 +1,427 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>LYNX – Energy Consumption</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/luxon@3.4.4/build/global/luxon.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1.3.1/dist/chartjs-adapter-luxon.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:Arial,sans-serif;background:#f0f2f5;color:#333;min-height:100vh}
+
+  .header{background:#2c3e50;color:#fff;padding:14px 24px;display:flex;
+          align-items:center;justify-content:space-between}
+  .header h1{font-size:1.2rem;font-weight:700}
+  .header-links a{color:#aed6f1;text-decoration:none;margin-left:18px;font-size:.85rem}
+  .header-links a:hover{color:#fff}
+
+  .controls{background:#fff;border-bottom:1px solid #ddd;padding:14px 24px;
+            display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end}
+  .ctrl-group{display:flex;flex-direction:column;gap:4px}
+  .ctrl-group label{font-size:.75rem;font-weight:600;color:#555;
+                    text-transform:uppercase;letter-spacing:.04em}
+  .ctrl-group input,.ctrl-group select{
+      padding:7px 10px;border:1px solid #ccc;border-radius:5px;
+      font-size:.9rem;background:#fafafa}
+  .ctrl-group input:focus,.ctrl-group select:focus{
+      outline:none;border-color:#3498db;background:#fff}
+
+  /* toggle switch */
+  .toggle-wrap{display:flex;align-items:center;gap:0;border:1px solid #ccc;
+               border-radius:5px;overflow:hidden;height:36px}
+  .toggle-btn{padding:0 18px;height:100%;border:none;background:#fafafa;
+              cursor:pointer;font-size:.88rem;font-weight:600;color:#555;
+              transition:background .15s,color .15s}
+  .toggle-btn.active{background:#3498db;color:#fff}
+  .toggle-btn:not(.active):hover{background:#eee}
+
+  .btn{padding:8px 18px;border:none;border-radius:5px;cursor:pointer;
+       font-size:.9rem;font-weight:600}
+  .btn-primary{background:#3498db;color:#fff}.btn-primary:hover{background:#2980b9}
+  .btn-success{background:#27ae60;color:#fff}.btn-success:hover{background:#219150}
+
+  .stats{display:flex;gap:16px;padding:14px 24px;flex-wrap:wrap}
+  .stat-card{background:#fff;border-radius:8px;padding:12px 20px;
+             box-shadow:0 1px 4px rgba(0,0,0,.08);min-width:140px;text-align:center}
+  .stat-card .val{font-size:1.6rem;font-weight:700;color:#2c3e50}
+  .stat-card .lbl{font-size:.75rem;color:#888;margin-top:2px}
+
+  .zone-panel{background:#fff;border-bottom:1px solid #e8e8e8;
+              padding:12px 24px;display:none;align-items:center;flex-wrap:wrap;gap:8px}
+  .zone-panel .zp-label{font-size:.78rem;font-weight:700;color:#555;
+                        text-transform:uppercase;letter-spacing:.04em;margin-right:4px}
+  .zone-chip{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;
+             border-radius:12px;border:2px solid transparent;cursor:pointer;
+             font-size:.8rem;font-weight:600;user-select:none;transition:opacity .15s}
+  .zone-chip.active{opacity:1}
+  .zone-chip.inactive{opacity:.28;filter:grayscale(.6)}
+  .zone-chip .dot{width:9px;height:9px;border-radius:50%;flex-shrink:0}
+  .zp-actions{display:flex;gap:6px;margin-left:auto}
+  .zp-btn{padding:4px 10px;border:1px solid #ccc;border-radius:4px;background:#fafafa;
+          cursor:pointer;font-size:.78rem;font-weight:600;color:#555}
+  .zp-btn:hover{background:#eee}
+
+  .chart-wrap{background:#fff;margin:0 24px 24px;border-radius:8px;
+              box-shadow:0 1px 6px rgba(0,0,0,.08);padding:20px;display:none}
+  .chart-wrap h2{font-size:1rem;font-weight:600;color:#555;margin-bottom:14px}
+  canvas{max-height:420px}
+
+  .table-wrap{margin:0 24px 32px;background:#fff;border-radius:8px;
+              box-shadow:0 1px 6px rgba(0,0,0,.08);overflow:auto;display:none}
+  table{width:100%;border-collapse:collapse}
+  th{background:#2c3e50;color:#fff;padding:10px 12px;text-align:left;font-size:.82rem}
+  td{padding:8px 12px;font-size:.85rem;border-bottom:1px solid #f0f0f0;text-align:right}
+  td:first-child{text-align:left}
+  tr:hover td{background:#f7faff}
+  tfoot td{font-weight:700;background:#f0f2f5;border-top:2px solid #ddd}
+
+  .msg{padding:10px 16px;border-radius:5px;margin:12px 24px;font-size:.9rem}
+  .msg-info{color:#0c5460;background:#d1ecf1}
+  .msg-err{color:#721c24;background:#f8d7da}
+  #loading{display:none;text-align:center;padding:40px;color:#888}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>⚡ LYNX – Energy Consumption</h1>
+  <div class="header-links">
+    <a href="/">← Dashboard</a>
+    <a href="/history">📈 History</a>
+  </div>
+</div>
+
+<div class="controls">
+  <div class="ctrl-group">
+    <label>View</label>
+    <div class="toggle-wrap">
+      <button class="toggle-btn active" id="btnHourly" onclick="setMode('hourly')">Hourly</button>
+      <button class="toggle-btn"        id="btnDaily"  onclick="setMode('daily')">Daily</button>
+    </div>
+  </div>
+  <div class="ctrl-group">
+    <label>Start</label>
+    <input type="datetime-local" id="startDt">
+  </div>
+  <div class="ctrl-group">
+    <label>End</label>
+    <input type="datetime-local" id="endDt">
+  </div>
+  <div class="ctrl-group">
+    <label>Line</label>
+    <select id="filterLine">
+      <option value="">All</option>
+      <option>1</option><option>2</option><option>3</option><option>4</option>
+    </select>
+  </div>
+  <div class="ctrl-group">
+    <label>Zone</label>
+    <input type="number" id="filterZone" placeholder="All" min="1" max="64" style="width:80px">
+  </div>
+  <button class="btn btn-primary" onclick="loadData()">🔍 Query</button>
+  <button class="btn btn-success" onclick="downloadCSV()">⬇ Download CSV</button>
+</div>
+
+<div id="zonePanelWrap" class="zone-panel">
+  <span class="zp-label">Zones</span>
+  <div id="zoneChips" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+  <div class="zp-actions">
+    <button class="zp-btn" onclick="selectAllZones()">All</button>
+    <button class="zp-btn" onclick="deselectAllZones()">None</button>
+  </div>
+</div>
+
+<div id="msgArea"></div>
+<div id="loading">Loading…</div>
+
+<div class="stats" id="statsRow" style="display:none">
+  <div class="stat-card"><div class="val" id="scBuckets">–</div><div class="lbl" id="scBucketsLbl">Hours</div></div>
+  <div class="stat-card"><div class="val" id="scTotal">–</div><div class="lbl">Total (kWh)</div></div>
+  <div class="stat-card"><div class="val" id="scPeak">–</div><div class="lbl" id="scPeakLbl">Peak Hour (kWh)</div></div>
+  <div class="stat-card"><div class="val" id="scAvg">–</div><div class="lbl" id="scAvgLbl">Avg/Hour (kWh)</div></div>
+  <div class="stat-card"><div class="val" id="scVoltage">–</div><div class="lbl">Line Voltage (V)</div></div>
+</div>
+
+<div class="chart-wrap" id="chartWrap">
+  <h2 id="chartTitle">Hourly Energy Consumption (kWh) — click legend or bar to toggle zone</h2>
+  <canvas id="energyChart"></canvas>
+</div>
+
+<div class="table-wrap" id="tableWrap">
+  <table id="energyTable">
+    <thead><tr id="tableHead"></tr></thead>
+    <tbody id="tableBody"></tbody>
+    <tfoot><tr id="tableFoot"></tr></tfoot>
+  </table>
+</div>
+
+<script>
+const PALETTE = ["#3498db","#e74c3c","#2ecc71","#f39c12","#9b59b6",
+                 "#1abc9c","#e67e22","#34495e","#16a085","#c0392b"];
+const _TZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+let _mode      = "hourly";   // "hourly" | "daily"
+let _allRows   = [];
+let _bucketKey = "hour";     // "hour" or "bucket"
+let _zoneKeys  = [];
+let _activeSet = new Set();
+let _voltage   = 240;
+let energyChart;
+
+// ── default date ranges ───────────────────────────────────────────────────────
+function setDefaultDates() {
+  const fmt = d => {
+    const p = n => String(n).padStart(2,"0");
+    return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate())+
+           "T"+p(d.getHours())+":"+p(d.getMinutes());
+  };
+  const now = new Date();
+  if (_mode === "hourly") {
+    document.getElementById("startDt").value = fmt(new Date(now - 86400000));
+  } else {
+    const d30 = new Date(now); d30.setDate(d30.getDate() - 30);
+    document.getElementById("startDt").value = fmt(d30);
+  }
+  document.getElementById("endDt").value = fmt(now);
+}
+
+(function() { setDefaultDates(); })();
+
+// ── mode toggle ───────────────────────────────────────────────────────────────
+function setMode(mode) {
+  _mode = mode;
+  document.getElementById("btnHourly").className = "toggle-btn" + (mode==="hourly"?" active":"");
+  document.getElementById("btnDaily").className  = "toggle-btn" + (mode==="daily"?" active":"");
+  setDefaultDates();
+  // Clear previous results
+  ["statsRow","zonePanelWrap","chartWrap","tableWrap"]
+    .forEach(id => document.getElementById(id).style.display = "none");
+  setMsg("","");
+}
+
+// ── load ──────────────────────────────────────────────────────────────────────
+async function loadData() {
+  setMsg("","");
+  document.getElementById("loading").style.display = "block";
+  ["statsRow","zonePanelWrap","chartWrap","tableWrap"]
+    .forEach(id => document.getElementById(id).style.display = "none");
+
+  const apiUrl = _mode === "hourly"
+    ? "/api/energy/hourly?" + buildParams()
+    : "/api/energy/daily?"  + buildParams();
+
+  try {
+    const res  = await fetch(apiUrl);
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    if (!data.rows?.length) { setMsg("No data for this range.","info"); return; }
+
+    _allRows   = data.rows;
+    _bucketKey = _mode === "hourly" ? "hour" : "bucket";
+    _voltage   = data.voltage;
+    _zoneKeys  = [...new Map(data.rows.map(r => [
+      `L${r.line}-Z${r.zone}`, {line:r.line, zone:r.zone, label:`L${r.line}-Z${r.zone}`}
+    ])).values()].sort((a,b)=>a.line-b.line||a.zone-b.zone);
+    _activeSet = new Set(_zoneKeys.map(z=>z.label));
+
+    // Update labels
+    const isHourly = _mode === "hourly";
+    document.getElementById("scBucketsLbl").textContent = isHourly ? "Hours"      : "Days";
+    document.getElementById("scPeakLbl").textContent    = isHourly ? "Peak Hour (kWh)" : "Peak Day (kWh)";
+    document.getElementById("scAvgLbl").textContent     = isHourly ? "Avg/Hour (kWh)"  : "Avg/Day (kWh)";
+    document.getElementById("chartTitle").textContent   = isHourly
+      ? "Hourly Energy Consumption (kWh) — click legend or bar to toggle zone"
+      : "Daily Energy Consumption (kWh) — click legend or bar to toggle zone";
+
+    renderZonePanel();
+    renderAll();
+  } catch(e) {
+    setMsg("Error: " + e.message, "err");
+  } finally {
+    document.getElementById("loading").style.display = "none";
+  }
+}
+
+function buildParams() {
+  const toUTC = v => v ? new Date(v).toISOString() : "";
+  const p = new URLSearchParams();
+  p.set("start", toUTC(document.getElementById("startDt").value));
+  p.set("end",   toUTC(document.getElementById("endDt").value));
+  p.set("tz",    _TZ);
+  const line = document.getElementById("filterLine").value;
+  const zone = document.getElementById("filterZone").value;
+  if (line) p.set("line", line);
+  if (zone) p.set("zone", zone);
+  return p.toString();
+}
+
+function downloadCSV() {
+  const base = _mode === "hourly" ? "/api/energy/hourly/csv" : "/api/energy/daily/csv";
+  window.location = base + "?" + buildParams();
+}
+
+// ── zone panel ────────────────────────────────────────────────────────────────
+function renderZonePanel() {
+  const chips = document.getElementById("zoneChips");
+  chips.innerHTML = "";
+  _zoneKeys.forEach((z, i) => {
+    const color = PALETTE[i % PALETTE.length];
+    const chip  = document.createElement("div");
+    chip.className   = "zone-chip active";
+    chip.dataset.key = z.label;
+    chip.style.borderColor = color;
+    chip.style.background  = color + "18";
+    chip.innerHTML = `<span class="dot" style="background:${color}"></span>${z.label}`;
+    chip.onclick   = () => toggleZone(z.label);
+    chips.appendChild(chip);
+  });
+  document.getElementById("zonePanelWrap").style.display = "flex";
+}
+
+function toggleZone(key) {
+  if (_activeSet.has(key)) { if (_activeSet.size===1) return; _activeSet.delete(key); }
+  else _activeSet.add(key);
+  document.querySelectorAll(".zone-chip").forEach(c =>
+    c.className = "zone-chip " + (_activeSet.has(c.dataset.key)?"active":"inactive"));
+  renderAll();
+}
+function selectAllZones() {
+  _activeSet = new Set(_zoneKeys.map(z=>z.label));
+  document.querySelectorAll(".zone-chip").forEach(c=>c.className="zone-chip active");
+  renderAll();
+}
+function deselectAllZones() {
+  _activeSet = new Set([_zoneKeys[0]?.label]);
+  document.querySelectorAll(".zone-chip").forEach(c=>
+    c.className="zone-chip "+(_activeSet.has(c.dataset.key)?"active":"inactive"));
+  renderAll();
+}
+
+// ── render all ────────────────────────────────────────────────────────────────
+function renderAll() {
+  const activeZones = _zoneKeys.filter(z => _activeSet.has(z.label));
+  const buckets = [...new Set(_allRows.map(r=>r[_bucketKey]))].sort();
+  const lookup  = {};
+  _allRows.forEach(r => { lookup[`${r.line}-${r.zone}|${r[_bucketKey]}`] = r.kwh; });
+
+  renderStats(buckets, activeZones, lookup);
+  renderChart(buckets, activeZones, lookup);
+  renderTable(buckets, activeZones, lookup);
+}
+
+// ── stats ─────────────────────────────────────────────────────────────────────
+function renderStats(buckets, activeZones, lookup) {
+  let total=0, peak=0;
+  buckets.forEach(b => {
+    let sum=0;
+    activeZones.forEach(z=>{ sum += lookup[`${z.line}-${z.zone}|${b}`]||0; });
+    total+=sum; if(sum>peak) peak=sum;
+  });
+  document.getElementById("scBuckets").textContent = buckets.length;
+  document.getElementById("scTotal").textContent   = total.toFixed(3);
+  document.getElementById("scPeak").textContent    = peak.toFixed(3);
+  document.getElementById("scAvg").textContent     = buckets.length?(total/buckets.length).toFixed(3):"–";
+  document.getElementById("scVoltage").textContent = _voltage+" V";
+  document.getElementById("statsRow").style.display = "flex";
+}
+
+// ── chart ─────────────────────────────────────────────────────────────────────
+function renderChart(buckets, activeZones, lookup) {
+  if (energyChart) energyChart.destroy();
+
+  const fmt    = _mode==="hourly" ? "MM-dd HH:mm" : "yyyy-MM-dd";
+  const labels = buckets.map(b => luxon.DateTime.fromISO(b,{zone:_TZ}).toFormat(fmt));
+
+  const datasets = activeZones.map((z,i) => ({
+    label:           z.label,
+    data:            buckets.map(b => lookup[`${z.line}-${z.zone}|${b}`]||0),
+    backgroundColor: PALETTE[_zoneKeys.indexOf(z)%PALETTE.length]+"cc",
+    borderColor:     PALETTE[_zoneKeys.indexOf(z)%PALETTE.length],
+    borderWidth:     1,
+  }));
+
+  Chart.register(ChartDataLabels);
+  const topIdx = datasets.length - 1;
+  datasets.forEach((ds,i) => {
+    ds.datalabels = i===topIdx ? {
+      anchor:"end", align:"end",
+      formatter:(_val,ctx) => {
+        const t = ctx.chart.data.datasets.reduce((s,d)=>s+(d.data[ctx.dataIndex]||0),0);
+        return t>0 ? t.toFixed(2) : "";
+      },
+      color:"#2c3e50", font:{size:10,weight:"bold"},
+    } : {display:false};
+  });
+
+  energyChart = new Chart(
+    document.getElementById("energyChart").getContext("2d"), {
+      type:"bar", data:{labels,datasets},
+      options:{
+        responsive:true, animation:false,
+        layout:{padding:{top:20}},
+        plugins:{
+          legend:{
+            position:"top", labels:{boxWidth:12,font:{size:11}},
+            onClick:(_e,item)=>toggleZone(item.text)
+          },
+          tooltip:{callbacks:{
+            footer:items=>"Total: "+(items.reduce((s,i)=>s+i.parsed.y,0)).toFixed(4)+" kWh"
+          }},
+          datalabels:{}
+        },
+        onClick:(_e,els)=>{
+          if(!els.length) return;
+          toggleZone(energyChart.data.datasets[els[0].datasetIndex].label);
+        },
+        scales:{
+          x:{stacked:true,ticks:{font:{size:10},maxRotation:45}},
+          y:{stacked:true,title:{display:true,text:"Energy (kWh)",font:{size:11}},
+             ticks:{font:{size:10}}}
+        }
+      }
+    }
+  );
+  document.getElementById("chartWrap").style.display="block";
+}
+
+// ── table ─────────────────────────────────────────────────────────────────────
+function renderTable(buckets, activeZones, lookup) {
+  const colLabel = _mode==="hourly" ? "Hour (local)" : "Day (local)";
+  const fmt      = _mode==="hourly" ? "yyyy-MM-dd HH:mm" : "yyyy-MM-dd";
+
+  document.getElementById("tableHead").innerHTML =
+    `<th>${colLabel}</th>` +
+    activeZones.map(z=>`<th>${z.label} kWh</th>`).join("") +
+    "<th>Total kWh</th>";
+
+  let colTotals = new Array(activeZones.length).fill(0);
+  let grand     = 0;
+  document.getElementById("tableBody").innerHTML = buckets.map(b => {
+    const label = luxon.DateTime.fromISO(b,{zone:_TZ}).toFormat(fmt);
+    let rowTotal = 0;
+    const cells = activeZones.map((z,i) => {
+      const v = lookup[`${z.line}-${z.zone}|${b}`]||0;
+      colTotals[i]+=v; rowTotal+=v;
+      return `<td>${v.toFixed(4)}</td>`;
+    }).join("");
+    grand+=rowTotal;
+    return `<tr><td>${label}</td>${cells}<td>${rowTotal.toFixed(4)}</td></tr>`;
+  }).join("");
+
+  document.getElementById("tableFoot").innerHTML =
+    "<td>Total</td>" +
+    colTotals.map(v=>`<td>${v.toFixed(4)}</td>`).join("") +
+    `<td>${grand.toFixed(4)}</td>`;
+
+  document.getElementById("tableWrap").style.display="block";
+}
+
+function setMsg(text,type){
+  document.getElementById("msgArea").innerHTML=
+    text?`<div class="msg msg-${type}">${text}</div>`:"";
+}
+</script>
+</body>
+</html>
