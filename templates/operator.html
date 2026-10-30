@@ -1,0 +1,478 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Operator Interface — LYNX Dashboard</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: Arial, sans-serif;
+      background: #f0f2f5;
+      color: #1a1a2e;
+      min-height: 100vh;
+    }
+
+    /* ── Nav bar ── */
+    .navbar {
+      background: #2c3e50;
+      color: #fff;
+      padding: 0 24px;
+      height: 52px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    .navbar .brand { font-size: 1.1rem; font-weight: 700; letter-spacing: .5px; }
+    .navbar .links a {
+      color: #cdd6e0;
+      text-decoration: none;
+      margin-left: 20px;
+      font-size: .9rem;
+      transition: color .15s;
+    }
+    .navbar .links a:hover, .navbar .links a.active { color: #fff; }
+
+    /* ── Override banner ── */
+    #override-banner {
+      display: none;
+      background: #e67e22;
+      color: #fff;
+      text-align: center;
+      padding: 10px 16px;
+      font-size: .95rem;
+      font-weight: 600;
+      letter-spacing: .3px;
+      position: relative;
+    }
+    #override-banner.active { display: block; }
+    #override-banner .countdown { font-size: 1.15rem; margin-left: 10px; }
+
+    /* ── Page layout ── */
+    .page {
+      max-width: 720px;
+      margin: 36px auto;
+      padding: 0 16px;
+    }
+
+    h2 {
+      font-size: 1.35rem;
+      font-weight: 700;
+      margin-bottom: 6px;
+      color: #2c3e50;
+    }
+    .subtitle {
+      color: #666;
+      font-size: .9rem;
+      margin-bottom: 28px;
+    }
+
+    /* ── Cards ── */
+    .card {
+      background: #fff;
+      border-radius: 10px;
+      box-shadow: 0 2px 12px rgba(0,0,0,.08);
+      padding: 28px 32px;
+      margin-bottom: 24px;
+    }
+    .card h3 {
+      font-size: 1.05rem;
+      font-weight: 700;
+      margin-bottom: 18px;
+      padding-bottom: 10px;
+      border-bottom: 2px solid #f0f2f5;
+      color: #2c3e50;
+    }
+
+    /* ── Form fields ── */
+    .field-row {
+      display: flex;
+      gap: 20px;
+      flex-wrap: wrap;
+      margin-bottom: 20px;
+    }
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      flex: 1;
+      min-width: 140px;
+    }
+    label {
+      font-size: .85rem;
+      font-weight: 600;
+      color: #555;
+      text-transform: uppercase;
+      letter-spacing: .4px;
+    }
+    input[type="number"], select {
+      padding: 10px 14px;
+      border: 1.5px solid #d0d7de;
+      border-radius: 6px;
+      font-size: 1rem;
+      color: #1a1a2e;
+      background: #fafafa;
+      width: 100%;
+      transition: border-color .15s;
+    }
+    input[type="number"]:focus, select:focus {
+      outline: none;
+      border-color: #3498db;
+      background: #fff;
+    }
+    .hint { font-size: .8rem; color: #888; margin-top: 2px; }
+
+    /* ── Buttons ── */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 11px 24px;
+      border: none;
+      border-radius: 7px;
+      font-size: .95rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background .15s, opacity .15s;
+    }
+    .btn:disabled { opacity: .5; cursor: default; }
+    .btn-start  { background: #27ae60; color: #fff; }
+    .btn-start:hover:not(:disabled)  { background: #219653; }
+    .btn-cancel { background: #e74c3c; color: #fff; }
+    .btn-cancel:hover:not(:disabled) { background: #c0392b; }
+    .btn-row { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 4px; }
+
+    /* ── Status card ── */
+    .status-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 14px;
+      margin-bottom: 20px;
+    }
+    .stat {
+      background: #f7f9fb;
+      border-radius: 8px;
+      padding: 14px 18px;
+      text-align: center;
+    }
+    .stat .label { font-size: .75rem; font-weight: 600; color: #888; text-transform: uppercase; }
+    .stat .value { font-size: 1.6rem; font-weight: 700; color: #2c3e50; margin-top: 4px; }
+    .stat .value.orange { color: #e67e22; }
+    .stat .value.green  { color: #27ae60; }
+    .stat .value.grey   { color: #aaa; }
+
+    /* ── Quick-pick duration buttons ── */
+    .quick-picks { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+    .qbtn {
+      padding: 6px 14px;
+      border: 1.5px solid #3498db;
+      border-radius: 20px;
+      background: transparent;
+      color: #3498db;
+      font-size: .85rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background .12s, color .12s;
+    }
+    .qbtn:hover { background: #3498db; color: #fff; }
+
+    /* ── Toast ── */
+    #toast {
+      position: fixed;
+      bottom: 28px;
+      right: 28px;
+      background: #2c3e50;
+      color: #fff;
+      padding: 12px 22px;
+      border-radius: 8px;
+      font-size: .9rem;
+      font-weight: 600;
+      box-shadow: 0 4px 16px rgba(0,0,0,.25);
+      opacity: 0;
+      transform: translateY(12px);
+      transition: opacity .25s, transform .25s;
+      pointer-events: none;
+      z-index: 999;
+    }
+    #toast.show { opacity: 1; transform: translateY(0); }
+    #toast.ok  { background: #27ae60; }
+    #toast.err { background: #e74c3c; }
+
+    /* ── Log ── */
+    #log {
+      font-size: .82rem;
+      color: #555;
+      line-height: 1.7;
+      max-height: 160px;
+      overflow-y: auto;
+      background: #f7f9fb;
+      border-radius: 6px;
+      padding: 10px 14px;
+    }
+    #log .entry { border-bottom: 1px solid #e8ecf0; padding: 3px 0; }
+    #log .entry:last-child { border-bottom: none; }
+    #log .ts { color: #aaa; margin-right: 8px; }
+
+    @media (max-width: 480px) {
+      .card { padding: 20px 16px; }
+      .field-row { flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- Nav -->
+<nav class="navbar">
+  <span class="brand">🔥 BriskHeat LYNX</span>
+  <div class="links">
+    <a href="/">Dashboard</a>
+    <a href="/history">History</a>
+    <a href="/energy">Energy</a>
+    <a href="/schedule">Schedule</a>
+    <a href="/operator" class="active">Operator</a>
+    <a href="/settings">Settings</a>
+  </div>
+</nav>
+
+<!-- Override banner (shown when override is active) -->
+<div id="override-banner">
+  ⚠️ OVERRIDE ACTIVE — All zones at <span id="banner-sp">--</span>°C &nbsp;|&nbsp;
+  Ends in <span id="banner-countdown" class="countdown">--</span>
+</div>
+
+<!-- Page -->
+<div class="page">
+  <h2>Operator Interface</h2>
+  <p class="subtitle">Temporarily override the schedule — runs all zones at a set temperature for a fixed duration, then automatically restores normal operation.</p>
+
+  <!-- Status card -->
+  <div class="card">
+    <h3>Current Override Status</h3>
+    <div class="status-grid">
+      <div class="stat">
+        <div class="label">Status</div>
+        <div class="value" id="stat-status">—</div>
+      </div>
+      <div class="stat">
+        <div class="label">Override SP</div>
+        <div class="value" id="stat-sp">—</div>
+      </div>
+      <div class="stat">
+        <div class="label">Time Remaining</div>
+        <div class="value" id="stat-remaining">—</div>
+      </div>
+      <div class="stat">
+        <div class="label">Ends At</div>
+        <div class="value" id="stat-ends">—</div>
+      </div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-cancel" id="btn-cancel" onclick="cancelOverride()" disabled>
+        ✕ Cancel Override &amp; Restore
+      </button>
+    </div>
+  </div>
+
+  <!-- Start override card -->
+  <div class="card">
+    <h3>Start New Override</h3>
+    <div class="field-row">
+      <div class="field">
+        <label>Setpoint (°C)</label>
+        <input type="number" id="inp-sp" min="0" max="400" step="0.5" value="110" placeholder="e.g. 110">
+        <div class="hint">Temperature for all zones during override</div>
+      </div>
+      <div class="field">
+        <label>Duration (hours)</label>
+        <input type="number" id="inp-hours" min="0.5" max="24" step="0.5" value="6" placeholder="e.g. 6">
+        <div class="hint">Override cancels automatically after this time</div>
+        <div class="quick-picks">
+          <button class="qbtn" onclick="setHours(1)">1h</button>
+          <button class="qbtn" onclick="setHours(2)">2h</button>
+          <button class="qbtn" onclick="setHours(4)">4h</button>
+          <button class="qbtn" onclick="setHours(6)">6h</button>
+          <button class="qbtn" onclick="setHours(8)">8h</button>
+          <button class="qbtn" onclick="setHours(12)">12h</button>
+        </div>
+      </div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-start" id="btn-start" onclick="startOverride()">
+        ▶ Start Override
+      </button>
+    </div>
+  </div>
+
+  <!-- Activity log card -->
+  <div class="card">
+    <h3>Activity Log</h3>
+    <div id="log"><div class="entry"><span class="ts">--:--:--</span> Waiting…</div></div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div id="toast"></div>
+
+<script>
+// ── Utilities ──────────────────────────────────────────────────────────────
+function toast(msg, type = 'ok') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className   = 'show ' + type;
+  clearTimeout(el._t);
+  el._t = setTimeout(() => { el.className = ''; }, 3200);
+}
+
+function addLog(msg) {
+  const log = document.getElementById('log');
+  const now = new Date().toLocaleTimeString('en-GB');
+  const div = document.createElement('div');
+  div.className = 'entry';
+  div.innerHTML = `<span class="ts">${now}</span>${msg}`;
+  // Prepend new entries
+  if (log.firstChild && log.firstChild.textContent === '--:--:-- Waiting…') {
+    log.innerHTML = '';
+  }
+  log.insertBefore(div, log.firstChild);
+  // Keep last 50 lines
+  while (log.children.length > 50) log.removeChild(log.lastChild);
+}
+
+function setHours(h) {
+  document.getElementById('inp-hours').value = h;
+}
+
+function fmtTime(epochSec) {
+  return new Date(epochSec * 1000).toLocaleTimeString('en-GB', {
+    hour: '2-digit', minute: '2-digit', day: '2-digit',
+    month: 'short'
+  });
+}
+
+// ── Status polling ─────────────────────────────────────────────────────────
+function updateStatus(d) {
+  const banner    = document.getElementById('override-banner');
+  const statSt    = document.getElementById('stat-status');
+  const statSp    = document.getElementById('stat-sp');
+  const statRem   = document.getElementById('stat-remaining');
+  const statEnds  = document.getElementById('stat-ends');
+  const btnCancel = document.getElementById('btn-cancel');
+  const btnStart  = document.getElementById('btn-start');
+
+  if (d.active) {
+    banner.classList.add('active');
+    document.getElementById('banner-sp').textContent        = d.setpoint.toFixed(1);
+    document.getElementById('banner-countdown').textContent = d.remaining_str;
+
+    statSt.textContent   = 'ACTIVE';
+    statSt.className     = 'value orange';
+    statSp.textContent   = d.setpoint.toFixed(1) + ' °C';
+    statSp.className     = 'value orange';
+    statRem.textContent  = d.remaining_str;
+    statRem.className    = 'value orange';
+    statEnds.textContent = fmtTime(d.end_utc);
+    statEnds.className   = 'value';
+
+    btnCancel.disabled = false;
+    btnStart.textContent = '▶ Restart Override';
+  } else {
+    banner.classList.remove('active');
+
+    statSt.textContent   = 'INACTIVE';
+    statSt.className     = 'value grey';
+    statSp.textContent   = '—';
+    statSp.className     = 'value grey';
+    statRem.textContent  = '—';
+    statRem.className    = 'value grey';
+    statEnds.textContent = '—';
+    statEnds.className   = 'value grey';
+
+    btnCancel.disabled = true;
+    btnStart.textContent = '▶ Start Override';
+  }
+}
+
+async function pollStatus() {
+  try {
+    const r = await fetch('/api/override/status');
+    const d = await r.json();
+    updateStatus(d);
+  } catch(e) {
+    console.warn('Status poll error:', e);
+  }
+}
+
+// Poll every 15 seconds
+pollStatus();
+setInterval(pollStatus, 15000);
+
+// ── Start override ─────────────────────────────────────────────────────────
+async function startOverride() {
+  const sp    = parseFloat(document.getElementById('inp-sp').value);
+  const hours = parseFloat(document.getElementById('inp-hours').value);
+
+  if (isNaN(sp) || sp <= 0 || sp > 400) {
+    toast('Enter a valid setpoint (1–400 °C)', 'err'); return;
+  }
+  if (isNaN(hours) || hours < 0.5 || hours > 24) {
+    toast('Duration must be 0.5–24 hours', 'err'); return;
+  }
+
+  const btn = document.getElementById('btn-start');
+  btn.disabled = true;
+  btn.textContent = '⏳ Applying…';
+
+  try {
+    const r = await fetch('/api/override/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ setpoint: sp, hours: hours })
+    });
+    const d = await r.json();
+    if (d.success) {
+      toast(`Override started — ${sp}°C for ${hours}h`, 'ok');
+      addLog(`Override started: ${sp.toFixed(1)}°C for ${hours}h (ends ${d.ends})`);
+      pollStatus();
+    } else {
+      toast('Error: ' + (d.error || 'unknown'), 'err');
+      addLog('Start failed: ' + (d.error || 'unknown'));
+    }
+  } catch(e) {
+    toast('Request failed: ' + e.message, 'err');
+    addLog('Request failed: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '▶ Start Override';
+  }
+}
+
+// ── Cancel override ────────────────────────────────────────────────────────
+async function cancelOverride() {
+  if (!confirm('Cancel override and restore previous setpoints?')) return;
+
+  const btn = document.getElementById('btn-cancel');
+  btn.disabled = true;
+  btn.textContent = '⏳ Restoring…';
+
+  try {
+    const r = await fetch('/api/override/cancel', { method: 'POST' });
+    const d = await r.json();
+    if (d.success) {
+      toast('Override cancelled — setpoints restored', 'ok');
+      addLog('Override cancelled — previous setpoints restored');
+      pollStatus();
+    } else {
+      toast('Cancel failed', 'err');
+    }
+  } catch(e) {
+    toast('Request failed: ' + e.message, 'err');
+  } finally {
+    btn.textContent = '✕ Cancel Override & Restore';
+    // button re-enable handled by next pollStatus()
+  }
+}
+</script>
+</body>
+</html>

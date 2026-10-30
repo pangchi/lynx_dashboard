@@ -30,6 +30,7 @@ lynx/
 ├── lynx_history.py         Flask blueprint — /history, /energy, and API routes
 ├── lynx_db_logger.py       Background PostgreSQL logger with auto-purge
 ├── lynx_schedule.py        Flask blueprint — /schedule page and scheduler thread
+├── lynx_operator.py        Flask blueprint — /operator override interface
 ├── lynx_reader.py          Modbus TCP/RTU + Centipede 2 LUI text protocol reader
 ├── c2_scan.py              Offline Centipede 2 register scanner (troubleshooting tool)
 ├── lynx_set_all.py         CLI tool — set all zones to the same setpoint
@@ -45,6 +46,7 @@ lynx/
     ├── history.html        History viewer page
     ├── energy.html         Hourly / daily energy consumption page
     ├── schedule.html       Setpoint schedule management page
+    ├── operator.html       Operator override interface page
     └── settings.html       Settings page
 ```
 
@@ -208,6 +210,7 @@ timezone = UTC                  ; IANA timezone for schedule firing
 | `http://HOST:5000/history` | History viewer — trend charts, zone selector, CSV |
 | `http://HOST:5000/energy` | Energy — hourly/daily kWh charts, CSV |
 | `http://HOST:5000/schedule` | Schedule — setpoint schedule CRUD |
+| `http://HOST:5000/operator` | Operator — timed override (all zones, N hours) |
 | `http://HOST:5000/settings` | Settings — configure all parameters live |
 
 ### Live Dashboard
@@ -659,6 +662,18 @@ sudo journalctl -u lynx-dashboard -n 50 --no-pager
   replaced `self.client.connected = False` with `self.client.close()`
 - **Fixed: pymodbus kwarg detection** — `_slave_kwarg()` now inspects method signature at runtime
   to select `device_id=`, `slave=`, or `unit=` per pymodbus version
+
+### v4.5 — Operator Override Interface
+- New `/operator` page: temporarily run all zones at a chosen setpoint for a fixed duration
+- Override saves current setpoints on start, restores them automatically on cancel or expiry
+- Background watchdog thread auto-cancels the override when the timer expires
+- Scheduled setpoint changes are suppressed while an override is active (`_fire()` guard)
+- Orange banner on the operator page shows active override SP and live countdown
+- Quick-pick duration buttons: 1h, 2h, 4h, 6h, 8h, 12h
+- Activity log shows start/cancel events with timestamps
+- New files: `lynx_operator.py`, `templates/operator.html`
+- `lynx_dashboard.py`: registers `operator_bp`, wires `init_operator()` callbacks
+- `lynx_schedule.py`: `_fire()` calls `_override_active()` guard before applying setpoints
 
 ### v4.4 — Energy Page Centipede 2 Support
 - Energy and history `power_w` calculation now supports three modes:

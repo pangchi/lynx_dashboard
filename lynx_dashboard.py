@@ -49,6 +49,7 @@ from lynx_db_logger import LynxDBLogger
 import lynx_history
 from lynx_history  import history_bp, init_history_db
 from lynx_schedule import schedule_bp, start_scheduler, update_scheduler_tz
+from lynx_operator import operator_bp, init_operator, override_active
 
 # ========= CONFIG – loaded from config.ini =========
 # APP_DIR may be set by app.py before import to ensure purge monitors
@@ -139,9 +140,10 @@ def api_detect_baud():
     return jsonify({"success": False, "error": f"No response on {port}"}), 200
 
 
-# Register history blueprint (adds /history, /api/history, /api/history/csv)
+# Register blueprints
 app.register_blueprint(history_bp)
 app.register_blueprint(schedule_bp)
+app.register_blueprint(operator_bp)
 init_history_db(
     host=DB_HOST, port=DB_PORT,
     dbname=DB_NAME, user=DB_USER, password=DB_PASSWORD,
@@ -160,6 +162,29 @@ db_logger = LynxDBLogger(
     mount_path=APP_DIR,
 )
 db_logger.start()
+
+# ── Operator override callbacks (wired after system is created below) ─────────
+def _op_set_all(sp: float):
+    """Write override SP to every currently-known zone."""
+    with data_lock:
+        zones = list(latest_data)
+    for z in zones:
+        try:
+            _perform_setpoint_write(int(z["line"]), int(z["zone"]), float(sp))
+        except Exception as exc:
+            logging.warning("operator set_all L%s-Z%s: %s", z.get("line"), z.get("zone"), exc)
+
+def _op_get_zones():
+    with data_lock:
+        return list(latest_data)
+
+def _op_restore(updates: list):
+    """Restore a list of {line, zone, sp} setpoints after override ends."""
+    for u in updates:
+        try:
+            _perform_setpoint_write(int(u["line"]), int(u["zone"]), float(u["sp"]))
+        except Exception as exc:
+            logging.warning("operator restore L%s-Z%s: %s", u.get("line"), u.get("zone"), exc)
 
 system = LynxTemperatureSystem(
     host=OI_HOST, port=OI_PORT,
@@ -548,6 +573,9 @@ def run():
             return list(latest_data)
     start_scheduler(_get_zones, _perform_setpoint_write,
                     tz_name=cfg.get("dashboard", "timezone", fallback="UTC"))
+
+    # Start operator override interface
+    init_operator(_op_set_all, _op_get_zones, _op_restore)
 
     socketio.run(app, host="0.0.0.0", port=FLASK_PORT, allow_unsafe_werkzeug=True)
 

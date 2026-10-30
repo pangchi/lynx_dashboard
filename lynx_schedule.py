@@ -35,6 +35,15 @@ from datetime import datetime, timezone
 
 from flask import Blueprint, request, jsonify, render_template
 
+# Import override guard — import is deferred-safe: if lynx_operator isn't
+# loaded yet the check falls back to False (no override).
+def _override_active() -> bool:
+    try:
+        from lynx_operator import override_active
+        return override_active()
+    except Exception:
+        return False
+
 log = logging.getLogger("lynx_schedule")
 
 schedule_bp = Blueprint("schedule", __name__, template_folder="templates")
@@ -217,6 +226,12 @@ def _check_schedules():
 
 
 def _fire(entry):
+    # Suppress scheduled setpoint changes while an operator override is active
+    if _override_active():
+        log.info("Schedule '%s' suppressed — operator override is active",
+                 entry.get("name", entry.get("id", "?")))
+        return
+
     sp    = float(entry["setpoint"])
     name  = entry.get("name", entry["id"])
     zones = entry.get("zones", [])
